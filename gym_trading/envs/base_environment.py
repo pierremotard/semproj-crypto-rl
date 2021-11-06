@@ -122,11 +122,15 @@ class BaseEnvironment(Env, ABC):
                 include_imbalances=True,
                 as_pandas=True,
             )
+
         # derive best bid and offer
         self._best_bids = self._raw_data['midpoint'] - (self._raw_data['spread'] / 2)
         self._best_asks = self._raw_data['midpoint'] + (self._raw_data['spread'] / 2)
 
         self.max_steps = self._raw_data.shape[0] - self.action_repeats - 1
+        print("RAW DATA : {}".format(self._raw_data.head(2)))
+        print("BEST BID : {}".format(self._best_bids.head(2)))
+        print("BEST ASK : {}".format(self._best_asks.head(2)))
 
         # load indicators into the indicator manager
         self.tns = IndicatorManager()
@@ -147,6 +151,8 @@ class BaseEnvironment(Env, ABC):
         self.buy_trade_index = features.index('buys')
         self.sell_trade_index = features.index('sells')
 
+        print(self.buy_trade_index)
+
         self.viz.observation_labels = self._normalized_data.columns.tolist()
         self.viz.observation_labels += self.tns.get_labels() + self.rsi.get_labels()
         self.viz.observation_labels += ['Inventory Count', 'Realized PNL', 'Unrealized PNL']
@@ -158,12 +164,14 @@ class BaseEnvironment(Env, ABC):
         self._best_bids = self._best_bids.to_numpy(dtype=np.float32)
         self._best_asks = self._best_asks.to_numpy(dtype=np.float32)
 
+
         # rendering class
         self._render = TradingGraph(sym=self.symbol)
 
         # graph midpoint prices
         self._render.reset_render_data(
             y_vec=self._midpoint_prices[:np.shape(self._render.x_vec)[0]])
+        self._render.render(self)
 
     @abstractmethod
     def map_action_to_broker(self, action: int) -> (float, float):
@@ -295,6 +303,23 @@ class BaseEnvironment(Env, ABC):
             buy_volume = self._get_book_data(index=self.buy_trade_index)
             sell_volume = self._get_book_data(index=self.sell_trade_index)
 
+            if buy_volume != 0 and self.tns is not None:
+                print("buy volume")
+                print(self.tns)
+                print(buy_volume)
+            if sell_volume != 0 and self.tns is not None:
+                print("sell volume")
+                print(self.tns)
+                print(sell_volume)
+
+
+            # print("------------------------ NEW STEP -------------------------")
+            # print("midpoint : {}".format(self.midpoint))
+            # print("midpoint change : {}".format(self.midpoint_change))
+            # print("best_bid : {}".format(self.best_bid))
+            # print("best_ask : {}".format(buy_volume))
+            # print("sell_volume : {}".format(sell_volume))
+
             # Update indicators
             self.tns.step(buys=buy_volume, sells=sell_volume)
             self.rsi.step(price=self.midpoint)
@@ -308,6 +333,12 @@ class BaseEnvironment(Env, ABC):
                 sell_volume=sell_volume,
                 step=self.local_step_number
             )
+            # LIMIT PNL remains always 0 when using the trend following environment (market orders)
+
+
+            print("limit_pnl : {}".format(limit_pnl))
+            # print("long_filled : {}".format(long_filled))
+            # print("short_filled : {}".format(short_filled))
 
             # Get PnL from any filled MARKET orders AND action penalties for invalid
             # actions made by the agent for future discouragement
@@ -317,6 +348,9 @@ class BaseEnvironment(Env, ABC):
                                                      step_penalty=action_penalty_reward,
                                                      long_filled=long_filled,
                                                      short_filled=short_filled)
+
+            print("market_pnl : {}".format(market_pnl))
+            # print("action_penalty_reward : {}".format(action_penalty_reward))
 
             # Add current step's observation to the data buffer
             step_observation = self._get_step_observation(step_action=step_action)

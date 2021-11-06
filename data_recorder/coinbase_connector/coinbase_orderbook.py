@@ -33,7 +33,7 @@ class CoinbaseOrderBook(OrderBook):
         self.clear_book()
         path = (COINBASE_BOOK_ENDPOINT % self.sym)
         book = requests.get(path, params={'level': 3}).json()
-
+        print(book)
         elapsed = time() - start_time
         LOGGER.info('%s get_book request completed in %f seconds.' % (self.sym, elapsed))
         return book
@@ -102,6 +102,7 @@ class CoinbaseOrderBook(OrderBook):
         :param msg: incoming tick
         :return: False if there is an exception
         """
+        #print(msg)
         message_type = msg['type']
         if 'sequence' not in msg:
             if message_type == 'subscriptions':

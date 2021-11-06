@@ -11,7 +11,7 @@ class TnS(Indicator):
         self.ups = self.downs = 0.
 
     def __str__(self):
-        return f"TNS: ups={self.ups} | downs={self.downs}"
+        return f"TNS: ups={self.ups} | downs={self.downs} | value={self._value}"
 
     def reset(self) -> None:
         """

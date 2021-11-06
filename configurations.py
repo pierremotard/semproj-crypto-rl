@@ -10,8 +10,8 @@ LOGGER = logging.getLogger('crypto_rl_log')
 # ./recorder.py
 SNAPSHOT_RATE = 1.0  # For example, 0.25 = 4x per second
 BASKET = [('BTC-USD', 'tBTCUSD'),
-          # ('ETH-USD', 'tETHUSD'),
-          # ('LTC-USD', 'tLTCUSD')
+          ('ETH-USD', 'tETHUSD'),
+          ('SOL-USD', 'tSOLUSD')
           ]
 
 # ./data_recorder/connector_components/client.py
@@ -25,8 +25,8 @@ MAX_BOOK_ROWS = 15
 INCLUDE_ORDERFLOW = True
 
 # ./data_recorder/database/database.py
-BATCH_SIZE = 100000
-RECORD_DATA = False
+BATCH_SIZE = 100
+RECORD_DATA = True
 MONGO_ENDPOINT = 'localhost'
 ARCTIC_NAME = 'crypto.tickstore'
 TIMEZONE = tz.utc

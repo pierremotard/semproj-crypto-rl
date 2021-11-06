@@ -188,6 +188,7 @@ class DataPipeline(object):
         fitting_data = self._decompose_order_flow_information(data=fitting_data)
         # Take the log difference of midpoint prices
         fitting_data = self._midpoint_diff(data=fitting_data)  # normalize midpoint
+        print(fitting_data.shape)
         # If applicable, smooth data set with EMA(s)
         fitting_data = apply_ema_all_data(ema=self.ema, data=fitting_data)
         # Fit the scaler

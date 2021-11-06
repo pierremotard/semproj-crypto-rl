@@ -33,6 +33,7 @@ class CoinbaseClient(Client):
         super(CoinbaseClient, self).run()
         while True:
             msg = self.queue.get()
+            #print("MESSAGE {}".format(msg))
 
             if self.book.new_tick(msg) is False:
                 # Coinbase requires a REST call to GET the initial LOB snapshot

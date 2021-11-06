@@ -13,7 +13,7 @@ class TradingGraph:
         # attributes for rendering
         self.sym = sym
         self.line1 = []
-        self.screen_size = 1000
+        self.screen_size = 500
         self.y_vec = None
         self.x_vec = np.linspace(0, self.screen_size * 10,
                                  self.screen_size + 1)[0:-1]
@@ -36,7 +36,7 @@ class TradingGraph:
         if not line1:
             # this is the call to matplotlib that allows dynamic plotting
             plt.ion()
-            fig = plt.figure(figsize=(20, 12))
+            fig = plt.figure(figsize=(10, 6))
             ax = fig.add_subplot(111)
             # create a variable for the line so we can later update it
             line1, = ax.plot(x_vec, y1_data, '-', label='midpoint', alpha=0.8)

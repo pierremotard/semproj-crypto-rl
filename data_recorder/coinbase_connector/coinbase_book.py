@@ -27,6 +27,7 @@ class CoinbaseBook(Book):
                 'type': msg['type'],
                 'product_id': msg['product_id']
             }
+            #Example order : {'order_id': '2e13d110-e660-43c5-b71b-7a4a8b451e66', 'price': 61724.94, 'size': 0.19087268, 'side': 'buy', 'time': '2021-10-30T10:44:44.087323Z', 'type': 'open', 'product_id': 'BTC-USD'}
             self.order_map[order['order_id']] = order
             price = order.get('price', None)
             size = order.get('size', None)
@@ -57,6 +58,7 @@ class CoinbaseBook(Book):
                 'product_id': msg['product_id']
             }
             price = order['price']
+            #print(price)
             if price in self.price_dict:
                 remove_size = order['size']
                 remaining_size = old_order['size'] - remove_size
@@ -108,6 +110,8 @@ class CoinbaseBook(Book):
 
             if price in self.price_dict:
                 if msg.get('reason', None) == 'canceled':
+                    #print("ORDER CANCELED")
+                    #print(msg)
                     self.price_dict[price].add_cancel(
                         quantity=float(msg.get('remaining_size')), price=price)
 

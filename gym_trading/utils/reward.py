@@ -15,6 +15,10 @@ def default(inventory_count: int, midpoint_change: float) -> float:
     :return: reward
     """
     reward = inventory_count * midpoint_change
+    print("inventory count {}".format(inventory_count))
+    print("midpoint change {}".format(midpoint_change))
+    print("reward {}".format(reward))
+    print("   ")
     return reward
 
 

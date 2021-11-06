@@ -40,7 +40,7 @@ class Client(Thread, ABC):
         Subscribe to full order book.
         """
         try:
-            self.ws = await websockets.connect(self.ws_endpoint)
+            self.ws = await websockets.connect(self.ws_endpoint, compression=None)
 
             if self.request is not None:
                 LOGGER.info('Requesting Book: {}'.format(self.request))

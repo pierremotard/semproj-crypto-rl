@@ -47,12 +47,14 @@ class TrendFollowing(BaseEnvironment):
         :param action: (int) current step's action
         :return: (float) reward
         """
+        print("MAP ACTION TO BROKER MARKET")
         action_penalty_reward = pnl = 0.0
 
         if action == 0:  # do nothing
             action_penalty_reward += ENCOURAGEMENT
 
         elif action == 1:  # buy
+            print("BUYING MARKET")
             # Deduct transaction costs
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE
@@ -74,6 +76,7 @@ class TrendFollowing(BaseEnvironment):
                                   'unable to place an order with broker').format(action))
 
         elif action == 2:  # sell
+            print("SELLING MARKET")
             # Deduct transaction costs
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE

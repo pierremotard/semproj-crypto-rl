@@ -31,7 +31,7 @@ class ExponentialMovingAverage(object):
         if self._value is None:
             self._value = value
             return
-
+        # (1 - alpha) * new current value + alpha * prev ema
         self._value = (1. - self.alpha) * value + self.alpha * self._value
 
     @property

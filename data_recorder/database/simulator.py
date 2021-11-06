@@ -151,8 +151,8 @@ class Simulator(object):
                 stationary feature set
         """
         self.db.init_db_connection()
-
         tick_history = self.db.get_tick_history(query=query)
+        print(query)
         if tick_history is None:
             LOGGER.warn("Query returned no data: {}".format(query))
             return None

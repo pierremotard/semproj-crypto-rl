@@ -138,6 +138,10 @@ class IndicatorManager(object):
         """
         self.indicators = list()
 
+    def __str__(self):
+        for label, indicator in self.indicators:
+            return f"{indicator}"
+
     def get_labels(self) -> list:
         """
         Get labels for each indicator being managed.

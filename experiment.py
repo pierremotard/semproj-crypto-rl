@@ -22,7 +22,7 @@ parser.add_argument('--testing_file',
                     help="Data set for training the agent (current day)",
                     type=str)
 parser.add_argument('--symbol',
-                    default='LTC-USD',
+                    default='BTC-USD',
                     help="Name of currency pair or instrument",
                     type=str)
 parser.add_argument('--id',
@@ -53,7 +53,7 @@ parser.add_argument('--load_weights',
                     help="Load saved load_weights if TRUE, otherwise start from scratch",
                     type=bool)
 parser.add_argument('--visualize',
-                    default=False,
+                    default=True,
                     help="Render midpoint on a screen",
                     type=bool)
 parser.add_argument('--training',

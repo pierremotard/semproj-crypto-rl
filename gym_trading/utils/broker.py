@@ -188,6 +188,7 @@ class Broker(object):
         :param step: (int) current time step number
         :return: (float) PnL for current time step due to limit order fill and netting
         """
+        print("step_limit_order_pnl")
         pnl = 0.
         is_long_order_filled = self.long_inventory.step(bid_price=bid_price,
                                                         ask_price=ask_price,
@@ -212,7 +213,7 @@ class Broker(object):
             is_short_order_filled = False
 
         if is_long_order_filled:
-            # check if we can net the inventory
+            # check if we can net the inventory (Pierre: Only used in market maker environment with pairs long/short orders?)
             if self.short_inventory_count > 0:
                 # net out the inventory
                 new_position = self.long_inventory.pop_position()
