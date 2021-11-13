@@ -20,11 +20,11 @@ class QNetwork(nn.Module):
             fc1_units (int): Number of nodes in first hidden layer
             fc2_units (int): Number of nodes in second hidden layer
         """
-        super(QNetwork, self).__init__()
+        super(QNetwork, self).__init__()  # calls __init__ method of nn.Module class
         self.seed = torch.manual_seed(seed)
         self.fc1 = nn.Linear(state_size, fc1_units)
         self.fc2 = nn.Linear(fc1_units, fc2_units)
-        self.fc3 = nn.Linear(fc2_units, action_size)
+        self.fc3 = nn.Linear(fc2_units, 3)
 
     """
     ###################################################

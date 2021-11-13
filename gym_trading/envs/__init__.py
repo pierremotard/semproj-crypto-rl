@@ -17,7 +17,7 @@ def test_env_loop(env) -> bool:
         i += 1
 
         action = env.action_space.sample()
-
+        print("ACTION SAMPLED {}".format(action))
         state, reward, done, _ = env.step(action)
         total_reward += reward
         reward_list.append(reward)
@@ -33,6 +33,7 @@ def test_env_loop(env) -> bool:
             # Visualize results
             env.plot_observation_history()
             env.plot_trade_history()
+            env.get_transaction_df()
             break
 
     print(f"Total reward: {total_reward}")

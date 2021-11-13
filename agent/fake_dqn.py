@@ -1,4 +1,4 @@
-from agent.dqnagent import DQNAgent
+from agent.dqn import DQNAgent
 from agent.model import QNetwork
 from configurations import LOGGER
 import os

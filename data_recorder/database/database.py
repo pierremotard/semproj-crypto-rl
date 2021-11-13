@@ -1,10 +1,10 @@
 from datetime import datetime as dt
 from typing import Union
-
+from datetime import tzinfo, timedelta
 import numpy as np
 import pandas as pd
 from arctic import Arctic, TICK_STORE
-from arctic.date import DateRange
+from arctic.date import DateRange, mktz
 from pymongo.errors import PyMongoError
 
 from configurations import (
@@ -84,8 +84,8 @@ class Database(object):
 
         try:
             LOGGER.info('\nGetting {} data from Arctic Tick Store...'.format(ccy))
-            cursor = self.collection.read(symbol=ccy,
-                                          date_range=DateRange(start_date, end_date))
+            cursor = self.collection.read(symbol=ccy[0],
+                                          date_range=DateRange(dt(2021, 11, 6, 16, 13, tzinfo=mktz('UTC')), dt(2021, 11, 6, 17, 15, tzinfo=mktz('UTC'))))
 
             # filter ticks for the first LOAD_BOOK message
             #   (starting point for order book reconstruction)

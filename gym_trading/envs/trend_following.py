@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from gym import spaces
 from typing import Tuple
 
@@ -28,6 +29,10 @@ class TrendFollowing(BaseEnvironment):
                                             shape=self.observation.shape,
                                             dtype=np.float32)
 
+        self.transactions = pd.DataFrame(index=["local_time_step"], columns=["action"])
+        self.buys = []
+        self.sells = []
+
         # Add the remaining labels for the observation space
         self.viz.observation_labels += [f'Action #{a}' for a in range(len(self.actions))]
         self.viz.observation_labels += ['Reward']
@@ -49,12 +54,21 @@ class TrendFollowing(BaseEnvironment):
         """
         print("MAP ACTION TO BROKER MARKET")
         action_penalty_reward = pnl = 0.0
+        self.steps_done.append(self.local_step_number)
+        self.midpoints.append(self.midpoint)
 
         if action == 0:  # do nothing
             action_penalty_reward += ENCOURAGEMENT
+            self.transactions.loc[self.local_step_number] = 0
 
         elif action == 1:  # buy
             print("BUYING MARKET")
+            print(self.observation)
+            print(self.local_step_number)
+            self.transactions.loc[self.local_step_number] = 1
+            print("buys")
+            self.buys.append(self.local_step_number)
+
             # Deduct transaction costs
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE
@@ -77,6 +91,11 @@ class TrendFollowing(BaseEnvironment):
 
         elif action == 2:  # sell
             print("SELLING MARKET")
+            print(self.observation)
+            print(self.local_step_number)
+            print("sells")
+            self.sells.append(self.local_step_number)
+            self.transactions.loc[self.local_step_number] = 2
             # Deduct transaction costs
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE

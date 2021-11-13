@@ -1,6 +1,6 @@
 import argparse
 
-from agent.dqn import Agent
+from agent.agent import Agent
 from configurations import LOGGER
 
 parser = argparse.ArgumentParser()

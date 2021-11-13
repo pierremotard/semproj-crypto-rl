@@ -123,11 +123,14 @@ class BaseEnvironment(Env, ABC):
                 as_pandas=True,
             )
 
+        print("RAW DATA SHAPE : {}".format(self._raw_data.shape))
+
         # derive best bid and offer
         self._best_bids = self._raw_data['midpoint'] - (self._raw_data['spread'] / 2)
         self._best_asks = self._raw_data['midpoint'] + (self._raw_data['spread'] / 2)
 
         self.max_steps = self._raw_data.shape[0] - self.action_repeats - 1
+        print("MAX STEPS : {}".format(self.max_steps))
         print("RAW DATA : {}".format(self._raw_data.head(2)))
         print("BEST BID : {}".format(self._best_bids.head(2)))
         print("BEST ASK : {}".format(self._best_asks.head(2)))
@@ -156,6 +159,12 @@ class BaseEnvironment(Env, ABC):
         self.viz.observation_labels = self._normalized_data.columns.tolist()
         self.viz.observation_labels += self.tns.get_labels() + self.rsi.get_labels()
         self.viz.observation_labels += ['Inventory Count', 'Realized PNL', 'Unrealized PNL']
+        self.transactions = pd.DataFrame(index=["local_time_step"], columns=["action", "volume", "midpoint"])
+        self.buys = []
+        self.sells = []
+        self.spent = 0
+        self.midpoints = []
+        self.steps_done = []
 
         # typecast all data sets to numpy
         self._raw_data = self._raw_data.to_numpy(dtype=np.float32)
@@ -303,6 +312,11 @@ class BaseEnvironment(Env, ABC):
             buy_volume = self._get_book_data(index=self.buy_trade_index)
             sell_volume = self._get_book_data(index=self.sell_trade_index)
 
+            print("MIDPOINT : {}".format(self.midpoint))
+
+            self.transactions.loc[self.local_step_number, "volume"] = buy_volume
+            self.transactions.loc[self.local_step_number, "midpoint"] = self.midpoint
+
             if buy_volume != 0 and self.tns is not None:
                 print("buy volume")
                 print(self.tns)
@@ -436,6 +450,10 @@ class BaseEnvironment(Env, ABC):
         self.rsi.reset()
         self.tns.reset()
         self.viz.reset()
+
+        self.steps_done = []
+        self.midpoints = []
+        self.buys = []
 
         for step in range(self.window_size + INDICATOR_WINDOW_MAX + 1):
             self.midpoint = self._midpoint_prices[self.local_step_number]
@@ -579,6 +597,12 @@ class BaseEnvironment(Env, ABC):
             observation = np.expand_dims(observation, axis=-1)
         return observation
 
+    def get_transaction_df(self) -> pd.DataFrame:
+        self.transactions.to_csv("transact.csv")
+        print(self.buys)
+        print(self.sells)
+        return self.transactions
+
     def get_trade_history(self) -> pd.DataFrame:
         """
         Get DataFrame with trades from most recent episode.
@@ -602,3 +626,21 @@ class BaseEnvironment(Env, ABC):
         :param save_filename: filename for saving the image
         """
         return self.viz.plot_obs(save_filename=save_filename)
+
+    def show_stats(self):
+        print(self.broker.get_statistics())
+        print(f'Total PNL {self.broker.get_unrealized_pnl()}')
+
+    def position_stats(self) -> np.ndarray:
+        print(self.broker.get_statistics())
+        print(self.steps_done)
+        print(self.midpoints)
+        print(self.buys)
+        return {
+            "spent": self.spent,
+            "held value": self.broker.net_inventory_count * self.midpoint,
+            "net inventory count": int(self.broker.net_inventory_count),
+            "realized pnl": '{:f}'.format(self.broker.realized_pnl),
+            "unrealized pnl": '{:f}'.format(self.broker.get_unrealized_pnl(self.best_bid, self.best_ask))
+        }
+

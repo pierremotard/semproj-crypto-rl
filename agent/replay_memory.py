@@ -21,13 +21,20 @@
 import random
 from collections import namedtuple, deque
 
+Transition = namedtuple('Transition',
+                        ('state', 'action', 'next_state', 'reward'))
+
 
 class ReplayMemory(object):
 
-    def __init__(self, capacity):
-        self.memory = deque([],maxlen=capacity)
+    def __init__(self, action_size, capacity, batch_size, seed):
+        self.action_size = action_size
+        print(capacity)
+        self.memory = deque(maxlen=capacity)
+        self.batch_size = batch_size
         self.transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
+                                     ('state', 'action', 'next_state', 'reward'))
+        self.seed = random.seed(seed)
 
     def push(self, *args):
         """Save a transition"""

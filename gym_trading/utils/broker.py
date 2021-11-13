@@ -84,6 +84,9 @@ class Broker(object):
         :param ask_price: (float) current ask price
         :return: (float) PnL from flattening inventory
         """
+        print('Flattening inventory. {} longs / {} shorts'.format(
+            self.long_inventory_count, self.short_inventory_count
+        ))
         LOGGER.debug('Flattening inventory. {} longs / {} shorts'.format(
             self.long_inventory_count, self.short_inventory_count
         ))
