@@ -20,7 +20,7 @@ from agent.memory import SequentialMemory
 from agent.model import QNetwork
 
 # Determine if CPU or GPU computation should be used
-from agent.replay_memory import ReplayMemory
+from agent.replay_memory import ReplayMemory, Transition
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -95,15 +95,17 @@ class DQNAgent():
     #
     def step(self, state, action, reward, next_state, done):
         # Save experience in replay memory
-        self.memory.add(state, action, reward, next_state, done)
+        self.memory.push(state, action, reward, next_state, done)
 
         # Learn every UPDATE_EVERY time steps.
         self.t_step = (self.t_step + 1) % self.update_rate
-        if self.t_step == 0:
-            # If enough samples are available in memory, get random subset and learn
-            if len(self.memory) > self.batch_size:
-                experiences = self.memory.sample()
-                self.learn(experiences, self.gamma)
+        #if self.t_step == 0:
+        # If enough samples are available in memory, get random subset and learn
+        print("LEN MEM {}".format(len(self.memory)))
+        print("batch size {}".format(self.batch_size))
+        if len(self.memory) > self.batch_size:
+            experiences = self.memory.sample(self.batch_size)
+            self.learn(experiences, self.gamma)
 
     ########################################################
     # ACT() method
@@ -136,31 +138,46 @@ class DQNAgent():
     def learn(self, transition, gamma):
         if len(self.memory) < self.batch_size:
             return
-        states, actions, rewards, next_state, dones = transition
+        states, actions, rewards, next_state, dones = Transition(*zip(*transition))
+
+        state_batch = torch.FloatTensor(states).to(device)
+        action_batch = torch.LongTensor(actions).to(device)
+        reward_batch = torch.FloatTensor(rewards).to(device)
+        next_state_batch = torch.FloatTensor(next_state).to(device)
+        done_batch = torch.FloatTensor(dones).to(device)
+
         ## TODO: compute and minimize the loss
         criterion = torch.nn.MSELoss()
         # Local model is one which we need to train so it's in training mode
-        self.qnetwork_local.train()
+        self.network.train()
         # Target model is one with which we need to get our target so it's in evaluation mode
         # So that when we do a forward pass with target model it does not calculate gradient.
         # We will update target model weights with soft_update function
-        self.qnetwork_target.eval()
+        self.target_network.eval()
         # shape of output from the model (batch_size,action_dim) = (64,4)
-        predicted_targets = self.qnetwork_local(states).gather(1, actions)
+        net_outputs = self.network(state_batch)
+        print("net outputs")
+        print(net_outputs.shape)
+        print(net_outputs)
+        print("action batch ")
+        print(action_batch.shape)
+        print(action_batch)
+        predicted_targets = net_outputs.gather(1, action_batch.reshape((self.batch_size, 1)))
 
         with torch.no_grad():
             labels_next = self.target_network(predicted_targets).detach().max(1)[0].unsqueeze(1)
 
         # .detach() ->  Returns a new Tensor, detached from the current graph.
-        labels = rewards + (gamma * labels_next * (1 - dones))
+        labels = reward_batch + (gamma * labels_next * (1 - done_batch))
 
         loss = criterion(predicted_targets, labels).to(device)
+        print("LOSS {}".format(loss))
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
         # ------------------- update target network ------------------- #
-        self.soft_update(self.qnetwork_local, self.qnetwork_target, TAU)
+        self.soft_update(self.network, self.target_network, TAU)
 
     ########################################################
     """

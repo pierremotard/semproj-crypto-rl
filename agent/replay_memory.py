@@ -30,15 +30,13 @@ class ReplayMemory(object):
     def __init__(self, action_size, capacity, batch_size, seed):
         self.action_size = action_size
         print(capacity)
-        self.memory = deque(maxlen=capacity)
+        self.memory = deque([], maxlen=capacity)
         self.batch_size = batch_size
-        self.transition = namedtuple('Transition',
-                                     ('state', 'action', 'next_state', 'reward'))
         self.seed = random.seed(seed)
 
     def push(self, *args):
         """Save a transition"""
-        self.memory.append(self.transition(*args))
+        self.memory.append(Transition(*args))
 
     def sample(self, batch_size):
         return random.sample(self.memory, batch_size)

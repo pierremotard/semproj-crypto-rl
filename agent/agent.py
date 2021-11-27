@@ -66,7 +66,7 @@ class Agent(object):
         print(self.env.action_space.n)
         self.agent = DQNAgent(self.env.observation_space.shape[1], action_size=self.env.action_space.n)
 
-        self.train = False
+        self.train = True
         self.cwd = os.path.dirname(os.path.realpath(__file__))
 
     def __str__(self):
@@ -96,6 +96,9 @@ class Agent(object):
                 action = self.agent.act(state, eps)
                 print("ACTION DECIDED {}".format(action))
                 next_state, reward, done, _ = self.env.step(action)
+
+                self.agent.step(state, action, reward, next_state, done)
+
                 state = next_state
                 score += reward
                 if done:
