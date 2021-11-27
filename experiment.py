@@ -1,6 +1,6 @@
 import argparse
 
-from agent.agent import Agent
+from agent.run import Run
 from configurations import LOGGER
 
 parser = argparse.ArgumentParser()
@@ -103,7 +103,7 @@ args = vars(parser.parse_args())
 
 def main(kwargs):
     LOGGER.info(f'Experiment creating agent with kwargs: {kwargs}')
-    agent = Agent(**kwargs)
+    agent = Run(**kwargs)
     LOGGER.info(f'Agent created. {agent}')
     agent.start()
 

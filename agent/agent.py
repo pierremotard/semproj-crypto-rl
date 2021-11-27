@@ -1,157 +1,160 @@
-from collections import deque
+"""
+DQN Agent for Vector Observation Learning
+Example Developed By:
+Michael Richardson, 2018
+Project for Udacity Danaodgree in Deep Reinforcement Learning (DRL)
+Code expanded and adapted from code examples provided by Udacity DRL Team, 2018.
+"""
 
+# Import Required Packages
 import torch
+import torch.nn.functional as F
+import torch.nn as nn
+import torch.optim as optim
 
-from agent.dqn import DQNAgent
-from configurations import LOGGER
-import os
-import gym
-import gym_trading
-from stable_baselines3 import DQN
-#from stable_baselines3.common.evaluation import evaluate_policy
-#from stable_baselines3.common.monitor import Monitor
 import numpy as np
+import random
 
-WINDOW_SIZE = 50
+from agent.model import DQN
+
+# Determine if CPU or GPU computation should be used
+from agent.replay_memory import ReplayMemory, Transition
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+BUFFER_SIZE = int(1e5)  # replay buffer size
+BATCH_SIZE = 64  # minibatch size
+GAMMA = 0.99  # discount factor
+TAU = 1e-3  # for soft update of target parameters
+LR = 5e-4  # learning rate
+UPDATE_EVERY = 4  # how often to update the network
+
+"""
+##################################################
+Agent Class
+Defines DQN Agent Methods
+Agent interacts with and learns from an environment.
+"""
 
 
-class Agent(object):
-    name = 'DQN'
+class Agent():
+    """
+    Initialize Agent, inclduing:
+        DQN Hyperparameters
+        Local and Targat State-Action Policy Networks
+        Replay Memory Buffer from Replay Buffer Class (define below)
+    """
 
-    def __init__(self, number_of_training_steps=1e5, gamma=0.999, load_weights=False, training=True,
-                 visualize=False, dueling_network=True, double_dqn=True, nn_type='mlp',
-                 **kwargs):
-        """
-        Agent constructor
-        :param window_size: int, number of lags to include in observation
-        :param max_position: int, maximum number of positions able to be held in inventory
-        :param fitting_file: str, file used for z-score fitting
-        :param testing_file: str,file used for dqn experiment
-        :param env: environment name
-        :param seed: int, random seed number
-        :param action_repeats: int, number of steps to take in environment between actions
-        :param number_of_training_steps: int, number of steps to train agent for
-        :param gamma: float, value between 0 and 1 used to discount future DQN returns
-        :param format_3d: boolean, format observation as matrix or tensor
-        :param train: boolean, train or test agent
-        :param load_weights: boolean, import existing weights
-        :param z_score: boolean, standardize observation space
-        :param visualize: boolean, visualize environment
-        :param dueling_network: boolean, use dueling network architecture
-        :param double_dqn: boolean, use double DQN for Q-value approximation
-        """
-        # Agent arguments
-        # self.env_name = id
-        self.neural_network_type = nn_type
-        self.load_weights = load_weights
-        self.number_of_training_steps = number_of_training_steps
-        self.visualize = visualize
-
-        # Create log dir
-        log_dir = "tmp/"
-        os.makedirs(log_dir, exist_ok=True)
-
-        # Create environment
-        self.env = gym.make(**kwargs)
-        self.eval_env = gym.make(**kwargs)
-        self.env_name = self.env.env.id
-
-        # Create agent
-        # NOTE: 'Keras-RL' uses its own frame-stacker
-        self.memory_frame_stack = 1  # Number of frames to stack e.g., 1.
-
-        # Instantiate DQN model
-        print(self.env.observation_space.shape)
-        print(self.env.observation_space.shape[1])
-        print(self.env.action_space.n)
-        self.agent = DQNAgent(self.env.observation_space.shape[1], action_size=self.env.action_space.n)
-
-        self.train = True
-        self.cwd = os.path.dirname(os.path.realpath(__file__))
-
-    def __str__(self):
-        # msg = '\n'
-        # return msg.join(['{}={}'.format(k, v) for k, v in self.__dict__.items()])
-        return 'Agent = {} | env = {} | number_of_training_steps = {}'.format(
-            Agent.name, self.env_name, self.number_of_training_steps)
-
-    def train_agent(self, nb_episodes=100, max_t=100, eps_start=1.0, eps_end=0.01, eps_decay=0.996):
-        """
-            Params
-            ======
-                nb_episodes (int): maximum number of training epsiodes
-                max_t (int): maximum number of timesteps per episode
-                eps_start (float): starting value of epsilon, for epsilon-greedy action selection
-                eps_end (float): minimum value of epsilon
-                eps_decay (float): mutiplicative factor (per episode) for decreasing epsilon
+    def __init__(self, state_size, action_size, replay_memory_size=10000, batch_size=64, gamma=0.99,
+                 learning_rate=1e-3, target_tau=2e-3, update_rate=4, seed=0):
 
         """
-        scores = []
-        scores_window = deque(maxlen=100)
-        eps = eps_start
-        for i_episode in range(1, nb_episodes + 1):
-            state = self.env.reset()
-            score = 0
-            for t in range(max_t):
-                action = self.agent.act(state, eps)
-                print("ACTION DECIDED {}".format(action))
-                next_state, reward, done, _ = self.env.step(action)
-
-                self.agent.step(state, action, reward, next_state, done)
-
-                state = next_state
-                score += reward
-                if done:
-                    break
-                scores_window.append(score)
-                scores.append(score)
-                eps = max(eps * eps_decay, eps_end)
-                print('\rEpisode {}\tAverage Score {:.2f}'.format(i_episode, np.mean(scores_window)), end=" ")
-
-                #if np.mean(scores_window) >= 100:
-                print('\nEnvironment solve in {:d} epsiodes!\tAverage score: {:.2f}'.format(i_episode - 100,
-                                                                                            np.mean(scores_window)))
-                torch.save(self.agent.network.state_dict(), 'checkpoint.pth')
-                break
-
-        return scores
-
-    def start(self) -> None:
+        DQN Agent Parameters
+        ======
+            state_size (int): dimension of each state
+            action_size (int): dimension of each action
+            dqn_type (string): can be either 'DQN' for vanillia dqn learning (default) or 'DDQN' for double-DQN.
+            replay_memory size (int): size of the replay memory buffer (typically 5e4 to 5e6)
+            batch_size (int): size of the memory batch used for model updates (typically 32, 64 or 128)
+            gamma (float): paramete for setting the discoun ted value of future rewards (typically .95 to .995)
+            learning_rate (float): specifies the rate of model learing (typically 1e-4 to 1e-3))
+            seed (int): random seed for initializing training point.
         """
-        Entry point for agent training and testing
-        :return: (void)
+        self.state_size = state_size
+        self.action_size = action_size
+    
+        # Hyperparameters
+        self.batch_size = batch_size
+        self.gamma = gamma
+        self.learn_rate = learning_rate
+        self.tau = target_tau
+        self.update_rate = update_rate
+        self.memory_frame_stack = 1
+        
+
         """
-        output_directory = os.path.join(self.cwd, 'dqn_weights')
-        if not os.path.exists(output_directory):
-            LOGGER.info('{} does not exist. Creating Directory.'.format(output_directory))
-            os.mkdir(output_directory)
+        # DQN Agent Q-Network
+        # For DQN training, two nerual network models are employed;
+        # (a) A network that is updated every (step % update_rate == 0)
+        # (b) A target network, with weights updated to equal the network at a slower (target_tau) rate.
+        # The slower modulation of the target network weights operates to stablize learning.
+        """
+        self.policy_net = DQN(self.state_size, self.action_size).to(device)
+        self.target_net = DQN(self.state_size, self.action_size).to(device)
 
-        weight_name = 'dqn_{}_{}_weights.h5f'.format(
-            self.env_name, "dqn")
-        weights_filename = os.path.join(output_directory, weight_name)
-        LOGGER.info("weights_filename: {}".format(weights_filename))
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.learn_rate)
 
-        if self.train:
+        # Replay memory
+        self.memory = ReplayMemory(replay_memory_size)
 
-            # Train the agent
-            self.train_agent()
-            print(" ----- ")
-            LOGGER.info("training over.")
-        else:
-            print("Load network from checkpoint ...")
-            self.agent.network.load_state_dict(torch.load("checkpoint.pth"))
-            print("Checkpoint loaded.")
-            print("Start testing ...")
-            for i in range(2):
-                state = self.env.reset()
-                for j in range(3):
-                    action = self.agent.act(state)
-                    state, reward, done, _ = self.env.step(action)
-                    print("Reward of test is {}".format(reward))
-                    if done:
-                        break
+        # Initialize time step (for updating every UPDATE_EVERY steps)
+        self.t_step = 0
 
-            print("Finish testing.")
-            self.env.get_transaction_df()
-            print(self.env.position_stats())
-            self.env.close()
+  
+    def act(self, state, eps=0.0):
+        """Returns actions for given state as per current policy.
+
+        Params
+        ======
+            state (array_like): current state
+            eps (float): epsilon, for epsilon-greedy action selection
+        """
+        if random.random() < eps:
+            print("Random action with epsilon {} probability".format(eps))
+            print("action size".format(self.action_size))
+            return torch.tensor([[random.randrange(self.action_size)]], device=device, dtype=torch.long)
+            #return random.choice(np.arange(self.action_size))
+
+        with torch.no_grad():
+            # t.max(1) will return largest column value of each row.
+            # second column on max result is index of where max element was
+            # found, so we pick action with the larger expected reward.
+            return self.policy_net(state).max(1)[1].view(1, 1)
+
+        #action_means = torch.mean(action_values.squeeze(-3), 0)
+        #return np.argmax(action_means.cpu().data.numpy())
+
+    def push_memory(self, state, action, next_state, reward):
+        self.memory.push(state, action, next_state, reward)
+
+    def optimize_model(self):
+        if len(self.memory) < self.batch_size:
+            return
+        transitions = self.memory.sample(self.batch_size)
+        batch = Transition(*zip(*transitions))
+
+        # Compute a mask of non-final states and concatenate the batch elements
+        # (a final state would've been the one after which simulation ended)
+        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                            batch.next_state)), device=device, dtype=torch.bool)
+        non_final_next_states = torch.cat([s for s in batch.next_state
+                                                    if s is not None])
+        state_batch = torch.cat(batch.state)
+        action_batch = torch.cat(batch.action)
+        reward_batch = torch.cat(batch.reward)
+
+        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
+        # columns of actions taken. These are the actions which would've been taken
+        # for each batch state according to policy_net
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+
+        # Compute V(s_{t+1}) for all next states.
+        # Expected values of actions for non_final_next_states are computed based
+        # on the "older" target_net; selecting their best reward with max(1)[0].
+        # This is merged based on the mask, such that we'll have either the expected
+        # state value or 0 in case the state was final.
+        next_state_values = torch.zeros(self.batch_size, device=device)
+        next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+        # Compute the expected Q values
+        expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+
+        # Compute Huber loss
+        criterion = nn.SmoothL1Loss()
+        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1, 1)
+        self.optimizer.step()
