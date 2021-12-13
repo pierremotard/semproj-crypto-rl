@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
 import random
@@ -89,6 +90,8 @@ class Agent():
 
         # Initialize time step (for updating every UPDATE_EVERY steps)
         self.t_step = 0
+        self.writer = SummaryWriter()
+
 
   
     def act(self, state, eps=0.0):
@@ -102,14 +105,23 @@ class Agent():
         if random.random() < eps:
             print("Random action with epsilon {} probability".format(eps))
             print("action size".format(self.action_size))
-            return torch.tensor([[random.randrange(self.action_size)]], device=device, dtype=torch.long)
+            return torch.tensor([random.randrange(self.action_size)], device=device, dtype=torch.long)
             #return random.choice(np.arange(self.action_size))
 
         with torch.no_grad():
             # t.max(1) will return largest column value of each row.
             # second column on max result is index of where max element was
             # found, so we pick action with the larger expected reward.
-            return self.policy_net(state).max(1)[1].view(1, 1)
+            # print("output policy net(state)")
+            # print(self.policy_net(state).shape)
+            # print(self.policy_net(state))
+            # print("output policy net(state).max(1)")
+            # print(len(self.policy_net(state).max(1)))
+            # print(self.policy_net(state).max(1))
+            # print("return")
+            # print(torch.tensor([self.policy_net(state).max(1)[1][-1]], device=device, dtype=torch.long))
+            return torch.tensor([self.policy_net(state).max(1)[1][-1]], device=device, dtype=torch.long)
+            #return self.policy_net(state).max(1)[1].view(1, 1)
 
         #action_means = torch.mean(action_values.squeeze(-3), 0)
         #return np.argmax(action_means.cpu().data.numpy())
@@ -117,7 +129,7 @@ class Agent():
     def push_memory(self, state, action, next_state, reward):
         self.memory.push(state, action, next_state, reward)
 
-    def optimize_model(self):
+    def optimize_model(self, epoch):
         if len(self.memory) < self.batch_size:
             return
         transitions = self.memory.sample(self.batch_size)
@@ -130,13 +142,17 @@ class Agent():
         non_final_next_states = torch.cat([s for s in batch.next_state
                                                     if s is not None])
         state_batch = torch.cat(batch.state)
+        #print("batch.action {}".format(batch.action))
+
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+        #print("self.policy_net(state_batch)")
+        #print(self.policy_net(state_batch))
+        state_action_values = self.policy_net(state_batch)#.gather(1, action_batch)
 
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
@@ -151,6 +167,8 @@ class Agent():
         # Compute Huber loss
         criterion = nn.SmoothL1Loss()
         loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+
+        self.writer.add_scalar("Loss/train", loss, global_step=epoch)
 
         # Optimize the model
         self.optimizer.zero_grad()

@@ -90,14 +90,26 @@ class Run(object):
         scores = []
         scores_window = deque(maxlen=100)
         eps = eps_start
+        steps_numbers = []
+        steps_buy = []
+        steps_sell = []
+
         for i_episode in range(nb_episodes):
             state = self.env.reset()
             state = torch.Tensor(state)
             score = 0
+            print()
+            print()
+            print()
+            print("RESET ENVIRONMENT for episode {}".format(i_episode))
+            print()
+            print()
+            print()
             for t in range(max_t):
-
+                print()
+                print("New step {} in episode {}".format(t, i_episode))
                 action = self.agent.act(state, eps)
-                print("ACTION DECIDED {}".format(action.item()))
+                print("Action chosen {}".format(action.item()))
                 next_state, reward, done, _ = self.env.step(action)
                 next_state = torch.tensor(next_state, device=device)
                 reward = torch.tensor([reward], device=device)
@@ -109,7 +121,7 @@ class Run(object):
                 state = next_state
                 
 
-                self.agent.optimize_model()
+                self.agent.optimize_model(t)
 
                 if done:
                     break
@@ -125,8 +137,45 @@ class Run(object):
                 #                                                                            np.mean(scores_window)))
                 #torch.save(self.agent.policy_net.state_dict(), 'checkpoint.pth')
 
+            
+
+            if i_episode % 10 == 0:
+                self.agent.target_net.load_state_dict(self.agent.policy_net.state_dict())
+
+            self.env.get_transaction_df(i_episode)
+
+
+        torch.save(self.agent.policy_net.state_dict(), "saved_models/policy_net_checkpoint.pth")
+        torch.save(self.agent.target_net.state_dict(), "saved_models/target_net_checkpoint.pth")
+
         self.env.close()
+        self.agent.writer.flush()
         return scores
+
+    def test_agent(self):
+        print("Load network from checkpoint ...")
+        self.agent.policy_net.load_state_dict(torch.load("saved_models/policy_net_checkpoint.pth"))
+        self.agent.target_net.load_state_dict(torch.load("saved_models/target_net_checkpoint.pth"))
+        print("Checkpoint loaded.")
+        print("Start testing ...")
+        for i_episode in range(2):
+            state = self.env.reset()
+            state = torch.tensor(state)
+            for j in range(3):
+                action = self.agent.act(state)
+                next_state, reward, done, _ = self.env.step(action)
+                print("Reward of test is {}".format(reward))
+                next_state = torch.tensor(next_state, device=device)
+                reward = torch.tensor([reward], device=device)
+
+                self.agent.push_memory(state, action, next_state, reward)
+
+                state = next_state
+            
+                
+                if done:
+                    break
+
 
     def start(self) -> None:
         """
@@ -144,25 +193,13 @@ class Run(object):
         LOGGER.info("weights_filename: {}".format(weights_filename))
 
         if self.train:
-
             # Train the agent
-            self.train_agent()
+            self.train_agent(nb_episodes=10, max_t=2000)
             print(" ----- ")
             LOGGER.info("training over.")
-        else:
-            print("Load network from checkpoint ...")
-            self.agent.network.load_state_dict(torch.load("checkpoint.pth"))
-            print("Checkpoint loaded.")
-            print("Start testing ...")
-            for i in range(2):
-                state = self.env.reset()
-                for j in range(3):
-                    action = self.agent.act(state)
-                    state, reward, done, _ = self.env.step(action)
-                    print("Reward of test is {}".format(reward))
-                    if done:
-                        break
 
+        else:
+            self.test_agent()
             print("Finish testing.")
             self.env.get_transaction_df()
             print(self.env.position_stats())
