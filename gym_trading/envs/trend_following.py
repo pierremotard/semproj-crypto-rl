@@ -45,28 +45,30 @@ class TrendFollowing(BaseEnvironment):
     def __str__(self):
         return '{} | {}-{}'.format(TrendFollowing.id, self.symbol, self._seed)
 
-    def map_action_to_broker(self, action: int) -> Tuple[float, float]:
+    def map_action_to_broker(self, action) -> Tuple[float, float]:
         """
         Create or adjust orders per a specified action and adjust for penalties.
 
-        :param action: (int) current step's action
+        :param action: current step's action
         :return: (float) reward
         """
-        print("MAP ACTION TO BROKER MARKET")
         action_penalty_reward = pnl = 0.0
         self.steps_done.append(self.local_step_number)
         self.midpoints.append(self.midpoint)
+
+        # amount = (action[0]).item()
+        # print("Amount in env {}".format(amount))
+        
+        # action_type = (action[1]).item()
+
 
         if action == 0:  # do nothing
             action_penalty_reward += ENCOURAGEMENT
             self.transactions.loc[self.local_step_number] = 0
 
         elif action == 1:  # buy
-            print("BUYING MARKET")
-            print(self.observation)
-            print(self.local_step_number)
+            print("Buy order.")
             self.transactions.loc[self.local_step_number] = 1
-            print("buys")
             self.buys.append(self.local_step_number)
 
             # Deduct transaction costs
@@ -90,10 +92,7 @@ class TrendFollowing(BaseEnvironment):
                                   'unable to place an order with broker').format(action))
 
         elif action == 2:  # sell
-            print("SELLING MARKET")
-            print(self.observation)
-            print(self.local_step_number)
-            print("sells")
+            print("Sell order.")
             self.sells.append(self.local_step_number)
             self.transactions.loc[self.local_step_number] = 2
             # Deduct transaction costs

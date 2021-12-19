@@ -1,5 +1,5 @@
 from collections import deque
-
+from comet_ml import Experiment
 import torch
 
 from agent.agent import Agent
@@ -12,15 +12,53 @@ from stable_baselines3 import DQN
 #from stable_baselines3.common.monitor import Monitor
 import numpy as np
 
-WINDOW_SIZE = 50
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+#----------- Env hyperparameters -----------#
+WINDOW_SIZE = 50
+
+
+#----------- PPO hyperparameters -----------#
+max_episode_len = 40
+update_timestep = max_episode_len * 2       # update policy every n timesteps
+# update policy for K epochs in one PPO update
+K_epochs = 50
+
+eps_clip = 0.2              # clip parameter for PPO
+gamma = 0.99                # discount factor
+
+lr_order = 0.001            # learning rate for order actor network
+lr_bid = 0.001              # learning rate for bid actor network
+lr_critic = 0.005           # learning rate for critic network
+
+# starting std for action distribution (Multivariate Normal)
+action_std = 0.6
+# action_std decay frequency (in num timesteps)
+action_std_decay_freq = int(2e5)
+# linearly decay action_std (action_std = action_std - action_std_decay_rate)
+action_std_decay_rate = 0.05
+# minimum action_std (stop decay after action_std <= min_action_std)
+min_action_std = 0.1
+
+save_model_every = 5
+id_trained_model = 0
+checkpoint_path = "saved_models/PPO_{}.pth".format(id_trained_model)
+
+random_seed = 0         # set random seed if required (0 = no random seed)
+
+hyper_params = {
+    "lr_order": 0.001,
+    "lr_bid": 0.001,
+    "lr_critic": 0.05
+}
 
 
 class Run(object):
-    name = 'DQN'
+    name = 'HPPO'
 
-    def __init__(self, number_of_training_steps=1e5, gamma=0.999, load_weights=False, training=True,
-                 visualize=False, dueling_network=True, double_dqn=True, nn_type='mlp',
+    def __init__(self, number_of_training_steps=1e2, gamma=0.999, load_weights=False, mode='train',
+                 visualize=False, dueling_network=True, double_dqn=True, logger=False,
                  **kwargs):
         """
         Run constructor
@@ -43,7 +81,6 @@ class Run(object):
         """
         # Agent arguments
         # self.env_name = id
-        self.neural_network_type = nn_type
         self.load_weights = load_weights
         self.number_of_training_steps = number_of_training_steps
         self.visualize = visualize
@@ -52,10 +89,18 @@ class Run(object):
         log_dir = "tmp/"
         os.makedirs(log_dir, exist_ok=True)
 
+        self.use_logger = logger
+        if self.use_logger:
+            self.experiment = Experiment(
+                project_name="crypto-trading", api_key="aASgA0tUpW7Y4FxbuD0egr84z", workspace="pierremotard")
+            self.experiment.log_parameters(hyper_params)
+
         # Create environment
         self.env = gym.make(**kwargs)
         self.eval_env = gym.make(**kwargs)
         self.env_name = self.env.env.id
+
+        self.kwargs = kwargs
 
         # Create agent
         # NOTE: 'Keras-RL' uses its own frame-stacker
@@ -65,9 +110,11 @@ class Run(object):
         print(self.env.observation_space.shape)
         print(self.env.observation_space.shape[1])
         print(self.env.action_space.n)
-        self.agent = Agent(self.env.observation_space.shape[1], action_size=self.env.action_space.n)
+        self.agent = Agent(self.env.observation_space.shape[1], action_size=self.env.action_space.n,
+                           lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std)
 
-        self.train = True
+        self.train = True if mode == 'train' else False
+        print("self train {}".format(self.train))
         self.cwd = os.path.dirname(os.path.realpath(__file__))
 
     def __str__(self):
@@ -87,120 +134,159 @@ class Run(object):
                 eps_decay (float): mutiplicative factor (per episode) for decreasing epsilon
 
         """
-        scores = []
-        scores_window = deque(maxlen=100)
-        eps = eps_start
-        steps_numbers = []
+
         steps_buy = []
         steps_sell = []
 
-        for i_episode in range(nb_episodes):
+        timestep = 0
+        while timestep <= nb_episodes:
+            print("------------------------------------")
+            print("New episode {}".format(timestep))
+            print("------------------------------------\n\n")
             state = self.env.reset()
-            state = torch.Tensor(state)
-            score = 0
-            print()
-            print()
-            print()
-            print("RESET ENVIRONMENT for episode {}".format(i_episode))
-            print()
-            print()
-            print()
-            for t in range(max_t):
-                print()
-                print("New step {} in episode {}".format(t, i_episode))
-                action = self.agent.act(state, eps)
-                print("Action chosen {}".format(action.item()))
-                next_state, reward, done, _ = self.env.step(action)
-                next_state = torch.tensor(next_state, device=device)
-                reward = torch.tensor([reward], device=device)
+            print("Init state shape {}".format(state.shape))
+            current_episode_reward = 0
+
+            for episode_step in range(max_episode_len):
+
+                print("New step {} in episode {}".format(
+                    episode_step, timestep))
+                print("state in main loop shape {}".format(state.shape))
+
+                state = torch.Tensor(state)
+                amount, action_type = self.agent.act(state)
+                print("Send to env action {}".format(
+                    torch.cat((amount, action_type.unsqueeze(0)), dim=0)))
+                state, reward, done, _ = self.env.step(
+                    torch.cat((amount, action_type.unsqueeze(0)), dim=0))
+
+                # next_state = torch.tensor(next_state, device=device)
+                # reward = torch.tensor([reward], device=device)
+                if self.use_logger:
+                    self.experiment.log_metric(
+                        "reward", reward, step=episode_step*(timestep+1))
+
+                self.agent.memory.rewards.append(reward)
+
+                timestep += 1
+                current_episode_reward += reward
+
+                # Update agent by optimizing its model
+                if timestep % update_timestep == 0:
+                    self.agent.optimize_model(episode_step)
+
+                # TODO: If continuous action space, add decay action std
+                if timestep % action_std_decay_freq == 0:
+                    self.agent.decay_action_std(
+                        action_std_decay_rate, min_action_std)
+
+                # TODO: Save the model checkpoint
+                LOGGER.info("Load model checkpoints...")
+                id_trained_model = 7
+                if timestep % save_model_every == 0:
+                    self.agent.save(checkpoint_path)
+
                 if done:
                     break
-
-                self.agent.push_memory(state, action, next_state, reward)
-
-                state = next_state
-                
-
-                self.agent.optimize_model(t)
-
-                if done:
-                    break
-
-                score += reward
-                scores_window.append(score)
-                scores.append(score)
-                eps = max(eps * eps_decay, eps_end)
-                #print('\rEpisode {}\tAverage Score {:.2f}'.format(i_episode, np.mean(scores_window)), end=" ")
-
-                #if np.mean(scores_window) >= 100:
-                #print('\nEnvironment solve in {:d} epsiodes!\tAverage score: {:.2f}'.format(i_episode - 100,
-                #                                                                            np.mean(scores_window)))
-                #torch.save(self.agent.policy_net.state_dict(), 'checkpoint.pth')
-
-            
-
-            if i_episode % 10 == 0:
-                self.agent.target_net.load_state_dict(self.agent.policy_net.state_dict())
-
-            self.env.get_transaction_df(i_episode)
-
-
-        torch.save(self.agent.policy_net.state_dict(), "saved_models/policy_net_checkpoint.pth")
-        torch.save(self.agent.target_net.state_dict(), "saved_models/target_net_checkpoint.pth")
 
         self.env.close()
         self.agent.writer.flush()
-        return scores
+        self.agent.writer.close()
+
+        torch.save(self.agent.policy.actor.order_net.state_dict(),
+                   "saved_models/order_net_checkpoint.pth")
+        torch.save(self.agent.policy.actor.bid_net.state_dict(),
+                   "saved_models/bid_net_checkpoint.pth")
 
     def test_agent(self):
         print("Load network from checkpoint ...")
-        self.agent.policy_net.load_state_dict(torch.load("saved_models/policy_net_checkpoint.pth"))
-        self.agent.target_net.load_state_dict(torch.load("saved_models/target_net_checkpoint.pth"))
+        self.agent.policy.actor.order_net.load_state_dict(
+            torch.load("saved_models/order_net_checkpoint.pth"))
+        self.agent.policy.actor.bid_net.load_state_dict(
+            torch.load("saved_models/bid_net_checkpoint.pth"))
         print("Checkpoint loaded.")
         print("Start testing ...")
-        for i_episode in range(2):
-            state = self.env.reset()
-            state = torch.tensor(state)
-            for j in range(3):
-                action = self.agent.act(state)
-                next_state, reward, done, _ = self.env.step(action)
-                print("Reward of test is {}".format(reward))
-                next_state = torch.tensor(next_state, device=device)
-                reward = torch.tensor([reward], device=device)
 
-                self.agent.push_memory(state, action, next_state, reward)
+        print("env details")
+        self.log_environment_details()
 
-                state = next_state
-            
-                
-                if done:
-                    break
+        state_size = self.env.observation_space.shape[0]
+        # action_size = env_test.action_space["action_type"].n
 
+        # test_agent = Agent(state_size, 3, lr_order, lr_bid,
+        #                 lr_critic, gamma, K_epochs, eps_clip, action_std)
+
+        self.agent.load(checkpoint_path)
+
+        episode_reward = 0
+        state = self.env.reset()
+        
+        info = []
+        buys = []
+        sells = []
+
+        print(self.kwargs["fitting_file"])
+
+        for i in range(100):
+            state = torch.Tensor(state)
+            action = self.agent.act(state)
+
+            print("Amount taken in test {}".format(action[0].item()))
+            print("Action taken in test {}".format(action[1].item()))
+
+            if action[1].item() == 0:
+                buys.append(i)
+            if action[1].item() == 1:
+                sells.append(i)
+
+            state, reward, done, info = self.env.step(action)
+            episode_reward += reward
+            # self.env.render()    not working yet
+
+            if done:
+                print("Reaches end of data or no more CA$H :(")
+                break
+
+                self.env.get_transaction_df(i_episode)
 
     def start(self) -> None:
         """
         Entry point for agent training and testing
         :return: (void)
         """
-        output_directory = os.path.join(self.cwd, 'dqn_weights')
+        output_directory = os.path.join(self.cwd, 'hppo_weights')
         if not os.path.exists(output_directory):
-            LOGGER.info('{} does not exist. Creating Directory.'.format(output_directory))
+            LOGGER.info(
+                '{} does not exist. Creating Directory.'.format(output_directory))
             os.mkdir(output_directory)
 
-        weight_name = 'dqn_{}_{}_weights.h5f'.format(
-            self.env_name, "dqn")
+        weight_name = 'hppo_{}_{}_weights.h5f'.format(
+            self.env_name, "hppo")
         weights_filename = os.path.join(output_directory, weight_name)
         LOGGER.info("weights_filename: {}".format(weights_filename))
 
         if self.train:
             # Train the agent
-            self.train_agent(nb_episodes=10, max_t=2000)
+            if self.use_logger:
+                with self.experiment.train():
+                    self.train_agent(nb_episodes=10, max_t=2)
+            else:
+                self.train_agent(nb_episodes=10, max_t=2)
             print(" ----- ")
             LOGGER.info("training over.")
 
         else:
-            self.test_agent()
+            if self.use_logger:
+                with self.experiment.test():
+                    self.test_agent()
+            else:
+                self.test_agent()
             print("Finish testing.")
-            self.env.get_transaction_df()
+            self.env.get_transaction_df("test_ep")
             print(self.env.position_stats())
             self.env.close()
+
+    def log_environment_details(self):
+        print("-- Environment details -- ")
+        print(self.env_name)
+        print(self.env.observation_space.shape)

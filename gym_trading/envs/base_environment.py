@@ -11,10 +11,12 @@ from configurations import (
     EMA_ALPHA, INDICATOR_WINDOW, INDICATOR_WINDOW_MAX, MARKET_ORDER_FEE,
 )
 from gym_trading.utils.broker import Broker
+from gym_trading.utils.portfolio import Portfolio
 from gym_trading.utils.data_pipeline import DataPipeline
 from gym_trading.utils.plot_history import Visualize
 from gym_trading.utils.render_env import TradingGraph
 from gym_trading.utils.statistic import ExperimentStatistics
+from gym_trading.utils.utils import plot_transactions
 from indicators import IndicatorManager, RSI, TnS
 
 VALID_REWARD_TYPES = [f for f in dir(reward_types) if '__' not in f]
@@ -75,6 +77,8 @@ class BaseEnvironment(Env, ABC):
         # get Broker class to keep track of PnL and orders
         self.broker = Broker(max_position=max_position, transaction_fee=transaction_fee)
 
+        self.portfolio = Portfolio("XBT")
+
         # properties required for instantiation
         self.symbol = symbol
         self.action_repeats = action_repeats
@@ -115,6 +119,7 @@ class BaseEnvironment(Env, ABC):
         #   2) raw_data - raw limit order book data, not including imbalances
         #   3) normalized_data - z-scored limit order book and order flow imbalance
         #       data, also midpoint price feature is replace by midpoint log price change
+
         self._midpoint_prices, self._raw_data, self._normalized_data = \
             self.data_pipeline.load_environment_data(
                 fitting_file=fitting_file,
@@ -290,9 +295,13 @@ class BaseEnvironment(Env, ABC):
             # reset the reward if there ARE action repeats
             if current_step == 0:
                 self.reward = 0.
-                step_action = action
+                step_amount = action[0].item()
+                print("Amount in env {}".format(step_amount))
+                
+                step_action_type = int(action[1].item())
+                print("action_type in env {}".format(step_action_type))
             else:
-                step_action = 0
+                step_action_type = 0
 
             # Get current step's midpoint and change in midpoint price percentage
             self.midpoint = self._midpoint_prices[self.local_step_number]
@@ -312,19 +321,10 @@ class BaseEnvironment(Env, ABC):
             buy_volume = self._get_book_data(index=self.buy_trade_index)
             sell_volume = self._get_book_data(index=self.sell_trade_index)
 
-            print("MIDPOINT : {}".format(self.midpoint))
+            
 
             self.transactions.loc[self.local_step_number, "volume"] = buy_volume
             self.transactions.loc[self.local_step_number, "midpoint"] = self.midpoint
-
-            if buy_volume != 0 and self.tns is not None:
-                print("buy volume")
-                print(self.tns)
-                print(buy_volume)
-            if sell_volume != 0 and self.tns is not None:
-                print("sell volume")
-                print(self.tns)
-                print(sell_volume)
 
 
             # print("------------------------ NEW STEP -------------------------")
@@ -349,25 +349,46 @@ class BaseEnvironment(Env, ABC):
             )
             # LIMIT PNL remains always 0 when using the trend following environment (market orders)
 
-
-            print("limit_pnl : {}".format(limit_pnl))
             # print("long_filled : {}".format(long_filled))
             # print("short_filled : {}".format(short_filled))
+            price = 0
+            if step_action_type == 1:
+                str_action_type = 'buy'
+                price = self.best_ask
+                print("PRICE BEST ASK {}".format(price))
+                self.portfolio.execute_order(str_action_type, step_amount, price, MARKET_ORDER_FEE)
+            elif step_action_type == 1:
+                str_action_type = 'sell'
+                price = self.best_bid
+                print("PRICE BEST BID {}".format(price))
+                self.portfolio.execute_order(str_action_type, step_amount, price, MARKET_ORDER_FEE)
+            else:
+                str_action_type = 'hold'
+            
+            self.portfolio.get_portfolio()
 
             # Get PnL from any filled MARKET orders AND action penalties for invalid
             # actions made by the agent for future discouragement
-            action_penalty_reward, market_pnl = self.map_action_to_broker(action=step_action)
+            action_penalty_reward, market_pnl = self.map_action_to_broker(action=step_action_type)
+            print(" --- --- --- ")
+            print("STEP AMOUNT {}".format(step_amount))
+            print("STEP ACTION TYPE {}".format(step_action_type))
+            print("STEP market PNL {}".format(market_pnl))
+            print(" --- --- --- ")
             step_pnl = limit_pnl + market_pnl
             self.step_reward = self._get_step_reward(step_pnl=step_pnl,
                                                      step_penalty=action_penalty_reward,
                                                      long_filled=long_filled,
                                                      short_filled=short_filled)
 
-            print("market_pnl : {}".format(market_pnl))
+            
             # print("action_penalty_reward : {}".format(action_penalty_reward))
 
+            if current_step == 0:
+                print("Midpoint : {}".format(self.midpoint))
+                print("Market PNL : {}".format(market_pnl))
             # Add current step's observation to the data buffer
-            step_observation = self._get_step_observation(step_action=step_action)
+            step_observation = self._get_step_observation(step_action=step_action_type)
             self.data_buffer.append(step_observation)
 
             # Store for visualization AFTER the episode
@@ -454,6 +475,7 @@ class BaseEnvironment(Env, ABC):
         self.steps_done = []
         self.midpoints = []
         self.buys = []
+        self.sells = []
 
         for step in range(self.window_size + INDICATOR_WINDOW_MAX + 1):
             self.midpoint = self._midpoint_prices[self.local_step_number]
@@ -597,11 +619,11 @@ class BaseEnvironment(Env, ABC):
             observation = np.expand_dims(observation, axis=-1)
         return observation
 
-    def get_transaction_df(self) -> pd.DataFrame:
-        self.transactions.to_csv("transact.csv")
-        print(self.buys)
-        print(self.sells)
-        return self.transactions
+    def get_transaction_df(self, episode):
+        episode = str(episode)
+        plot_transactions(self.buys, self.sells, episode)
+
+        return
 
     def get_trade_history(self) -> pd.DataFrame:
         """
@@ -632,9 +654,6 @@ class BaseEnvironment(Env, ABC):
         print(f'Total PNL {self.broker.get_unrealized_pnl()}')
 
     def position_stats(self) -> np.ndarray:
-        print(self.broker.get_statistics())
-        print(self.steps_done)
-        print(self.midpoints)
         print(self.buys)
         return {
             "spent": self.spent,

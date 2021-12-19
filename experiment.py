@@ -14,11 +14,11 @@ parser.add_argument('--max_position',
                          "able to be held in a broker's inventory",
                     type=int)
 parser.add_argument('--fitting_file',
-                    default='demo_LTC-USD_20190926.csv.xz',
+                    default='XBTUSD_2020-01-02.csv.xz',
                     help="Data set for fitting the z-score scaler (previous day)",
                     type=str)
 parser.add_argument('--testing_file',
-                    default='demo_LTC-USD_20190926.csv.xz',
+                    default='XBTUSD_2020-01-03.csv.xz',
                     help="Data set for training the agent (current day)",
                     type=str)
 parser.add_argument('--symbol',
@@ -32,7 +32,7 @@ parser.add_argument('--id',
                          "'market-maker-v0'",
                     type=str)
 parser.add_argument('--number_of_training_steps',
-                    default=1e5,
+                    default=1e2, #Default was 1e5
                     help="Number of steps to train the agent "
                          "(does not include action repeats)",
                     type=int)
@@ -56,11 +56,11 @@ parser.add_argument('--visualize',
                     default=True,
                     help="Render midpoint on a screen",
                     type=bool)
-parser.add_argument('--training',
-                    default=True,
+parser.add_argument('--mode',
+                    default='train',
                     help="Training or testing mode. " +
-                         "If TRUE, then agent starts learning, " +
-                         "If FALSE, then agent is tested",
+                         "If train, then agent starts learning, " +
+                         "If test, then agent is tested",
                     type=bool)
 parser.add_argument('--reward_type',
                     default='default',
@@ -86,10 +86,10 @@ parser.add_argument('--reward_type',
                     6) 'trade_completion' --> reward is generated per trade's round trip
                     """,
                     type=str)
-parser.add_argument('--nn_type',
-                    default='cnn',
-                    help="Type of neural network to use: 'cnn' or 'mlp' ",
-                    type=str)
+# parser.add_argument('--nn_type',
+#                     default='cnn',
+#                     help="Type of neural network to use: 'cnn' or 'mlp' ",
+#                     type=str)
 parser.add_argument('--dueling_network',
                     default=True,
                     help="If TRUE, use Dueling architecture in DQN",
@@ -98,6 +98,13 @@ parser.add_argument('--double_dqn',
                     default=True,
                     help="If TRUE, use double DQN for Q-value estimation",
                     type=bool)
+
+parser.add_argument('--logger',
+                    default=False,
+                    help="If TRUE, uses CometML to track the experiment",
+                    type=bool)
+
+
 args = vars(parser.parse_args())
 
 

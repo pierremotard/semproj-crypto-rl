@@ -191,7 +191,6 @@ class Broker(object):
         :param step: (int) current time step number
         :return: (float) PnL for current time step due to limit order fill and netting
         """
-        print("step_limit_order_pnl")
         pnl = 0.
         is_long_order_filled = self.long_inventory.step(bid_price=bid_price,
                                                         ask_price=ask_price,
