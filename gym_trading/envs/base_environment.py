@@ -128,17 +128,11 @@ class BaseEnvironment(Env, ABC):
                 as_pandas=True,
             )
 
-        print("RAW DATA SHAPE : {}".format(self._raw_data.shape))
-
         # derive best bid and offer
         self._best_bids = self._raw_data['midpoint'] - (self._raw_data['spread'] / 2)
         self._best_asks = self._raw_data['midpoint'] + (self._raw_data['spread'] / 2)
 
         self.max_steps = self._raw_data.shape[0] - self.action_repeats - 1
-        print("MAX STEPS : {}".format(self.max_steps))
-        print("RAW DATA : {}".format(self._raw_data.head(2)))
-        print("BEST BID : {}".format(self._best_bids.head(2)))
-        print("BEST ASK : {}".format(self._best_asks.head(2)))
 
         # load indicators into the indicator manager
         self.tns = IndicatorManager()
@@ -170,6 +164,8 @@ class BaseEnvironment(Env, ABC):
         self.spent = 0
         self.midpoints = []
         self.steps_done = []
+        self.net_worth_values = []
+        self.seen = []
 
         # typecast all data sets to numpy
         self._raw_data = self._raw_data.to_numpy(dtype=np.float32)
@@ -296,10 +292,7 @@ class BaseEnvironment(Env, ABC):
             if current_step == 0:
                 self.reward = 0.
                 step_amount = action[0].item()
-                print("Amount in env {}".format(step_amount))
-                
                 step_action_type = int(action[1].item())
-                print("action_type in env {}".format(step_action_type))
             else:
                 step_action_type = 0
 
@@ -348,33 +341,30 @@ class BaseEnvironment(Env, ABC):
                 step=self.local_step_number
             )
             # LIMIT PNL remains always 0 when using the trend following environment (market orders)
-
             # print("long_filled : {}".format(long_filled))
             # print("short_filled : {}".format(short_filled))
             price = 0
             if step_action_type == 1:
                 str_action_type = 'buy'
                 price = self.best_ask
-                print("PRICE BEST ASK {}".format(price))
                 self.portfolio.execute_order(str_action_type, step_amount, price, MARKET_ORDER_FEE)
             elif step_action_type == 1:
                 str_action_type = 'sell'
                 price = self.best_bid
-                print("PRICE BEST BID {}".format(price))
                 self.portfolio.execute_order(str_action_type, step_amount, price, MARKET_ORDER_FEE)
             else:
                 str_action_type = 'hold'
             
-            self.portfolio.get_portfolio()
+            self.net_worth_values.append(self.portfolio.get_net_worth())
 
             # Get PnL from any filled MARKET orders AND action penalties for invalid
             # actions made by the agent for future discouragement
             action_penalty_reward, market_pnl = self.map_action_to_broker(action=step_action_type)
-            print(" --- --- --- ")
-            print("STEP AMOUNT {}".format(step_amount))
-            print("STEP ACTION TYPE {}".format(step_action_type))
-            print("STEP market PNL {}".format(market_pnl))
-            print(" --- --- --- ")
+            # print(" --- --- --- ")
+            # print("STEP AMOUNT {}".format(step_amount))
+            # print("STEP ACTION TYPE {}".format(step_action_type))
+            # print("STEP market PNL {}".format(market_pnl))
+            # print(" --- --- --- ")
             step_pnl = limit_pnl + market_pnl
             self.step_reward = self._get_step_reward(step_pnl=step_pnl,
                                                      step_penalty=action_penalty_reward,
@@ -384,9 +374,9 @@ class BaseEnvironment(Env, ABC):
             
             # print("action_penalty_reward : {}".format(action_penalty_reward))
 
-            if current_step == 0:
-                print("Midpoint : {}".format(self.midpoint))
-                print("Market PNL : {}".format(market_pnl))
+            # if current_step == 0:
+                # print("Midpoint : {}".format(self.midpoint))
+                # print("Market PNL : {}".format(market_pnl))
             # Add current step's observation to the data buffer
             step_observation = self._get_step_observation(step_action=step_action_type)
             self.data_buffer.append(step_observation)
@@ -441,7 +431,7 @@ class BaseEnvironment(Env, ABC):
                                                                 high=self.max_steps // 5)
         else:
             self.local_step_number = 0
-
+        self.local_step_number = 0
         # print out episode statistics if there was any activity by the agent
         if self.broker.total_trade_count > 0 or self.broker.realized_pnl != 0.:
             self.episode_stats.number_of_episodes += 1
@@ -619,9 +609,9 @@ class BaseEnvironment(Env, ABC):
             observation = np.expand_dims(observation, axis=-1)
         return observation
 
-    def get_transaction_df(self, episode):
+    def get_transaction_df(self, datafile, episode):
         episode = str(episode)
-        plot_transactions(self.buys, self.sells, episode)
+        plot_transactions(self.buys, self.sells, self.net_worth_values, self.seen, datafile, episode)
 
         return
 
@@ -654,7 +644,6 @@ class BaseEnvironment(Env, ABC):
         print(f'Total PNL {self.broker.get_unrealized_pnl()}')
 
     def position_stats(self) -> np.ndarray:
-        print(self.buys)
         return {
             "spent": self.spent,
             "held value": self.broker.net_inventory_count * self.midpoint,

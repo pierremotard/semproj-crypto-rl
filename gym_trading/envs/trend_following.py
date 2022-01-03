@@ -56,11 +56,7 @@ class TrendFollowing(BaseEnvironment):
         self.steps_done.append(self.local_step_number)
         self.midpoints.append(self.midpoint)
 
-        # amount = (action[0]).item()
-        # print("Amount in env {}".format(amount))
-        
-        # action_type = (action[1]).item()
-
+        self.seen.append(self.local_step_number)
 
         if action == 0:  # do nothing
             action_penalty_reward += ENCOURAGEMENT

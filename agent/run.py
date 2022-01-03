@@ -15,13 +15,16 @@ import numpy as np
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+data_days = ["XBTUSD_2020-01-02.csv.xz", "XBTUSD_2020-01-03.csv.xz", "XBTUSD_2020-01-04.csv.xz", 
+            "XBTUSD_2020-01-05.csv.xz", "XBTUSD_2020-01-06.csv.xz", "XBTUSD_2020-01-07.csv.xz", "XBTUSD_2020-01-08.csv.xz",
+            "XBTUSD_2020-01-09.csv.xz", "XBTUSD_2020-01-10.csv.xz", "XBTUSD_2020-01-11.csv.xz", "XBTUSD_2020-01-12.csv.xz"]
+
 #----------- Env hyperparameters -----------#
-WINDOW_SIZE = 50
 
 
 #----------- PPO hyperparameters -----------#
-max_episode_len = 40
-update_timestep = max_episode_len * 2       # update policy every n timesteps
+max_episode_len = 15000
+update_timestep = 80 # max_episode_len * 2       # update policy every n timesteps
 # update policy for K epochs in one PPO update
 K_epochs = 50
 
@@ -41,7 +44,7 @@ action_std_decay_rate = 0.05
 # minimum action_std (stop decay after action_std <= min_action_std)
 min_action_std = 0.1
 
-save_model_every = 5
+save_model_every = 1000
 id_trained_model = 0
 checkpoint_path = "saved_models/PPO_{}.pth".format(id_trained_model)
 
@@ -57,7 +60,7 @@ hyper_params = {
 class Run(object):
     name = 'HPPO'
 
-    def __init__(self, number_of_training_steps=1e2, gamma=0.999, load_weights=False, mode='train',
+    def __init__(self, mode, nb_training_days=3, nb_testing_days=2, number_of_training_steps=1e2, gamma=0.999, load_weights=False,
                  visualize=False, dueling_network=True, double_dqn=True, logger=False,
                  **kwargs):
         """
@@ -106,15 +109,23 @@ class Run(object):
         # NOTE: 'Keras-RL' uses its own frame-stacker
         self.memory_frame_stack = 1  # Number of frames to stack e.g., 1.
 
+        self.daily_returns = []
+
         # Instantiate DQN model
         print(self.env.observation_space.shape)
         print(self.env.observation_space.shape[1])
         print(self.env.action_space.n)
+        self.window_size = self.env.window_size
         self.agent = Agent(self.env.observation_space.shape[1], action_size=self.env.action_space.n,
-                           lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std)
+                           lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std, window_size=self.window_size)
 
-        self.train = True if mode == 'train' else False
-        print("self train {}".format(self.train))
+        self.train = str(mode) == 'train'
+        print("Mode TRAINING") if self.train else print("Mode TESTING")
+        
+        self.nb_training_days = nb_training_days
+        self.nb_testing_days = nb_testing_days
+
+            
         self.cwd = os.path.dirname(os.path.realpath(__file__))
 
     def __str__(self):
@@ -123,12 +134,11 @@ class Run(object):
         return 'Agent = {} | env = {} | number_of_training_steps = {}'.format(
             Run.name, self.env_name, self.number_of_training_steps)
 
-    def train_agent(self, nb_episodes=100, max_t=10, eps_start=1.0, eps_end=0.01, eps_decay=0.996):
+    def train_agent(self, nb_episodes=1, eps_start=1.0, eps_end=0.01, eps_decay=0.996):
         """
             Params
             ======
                 nb_episodes (int): maximum number of training epsiodes
-                max_t (int): maximum number of timesteps per episode
                 eps_start (float): starting value of epsilon, for epsilon-greedy action selection
                 eps_end (float): minimum value of epsilon
                 eps_decay (float): mutiplicative factor (per episode) for decreasing epsilon
@@ -148,15 +158,15 @@ class Run(object):
             current_episode_reward = 0
 
             for episode_step in range(max_episode_len):
+                if episode_step % 500:
+                    print("New step {}".format(episode_step))
 
-                print("New step {} in episode {}".format(
-                    episode_step, timestep))
-                print("state in main loop shape {}".format(state.shape))
+                state = torch.Tensor(state).unsqueeze(0)
+                print("state in run {}".format(state.shape))
 
-                state = torch.Tensor(state)
                 amount, action_type = self.agent.act(state)
-                print("Send to env action {}".format(
-                    torch.cat((amount, action_type.unsqueeze(0)), dim=0)))
+
+
                 state, reward, done, _ = self.env.step(
                     torch.cat((amount, action_type.unsqueeze(0)), dim=0))
 
@@ -168,27 +178,27 @@ class Run(object):
 
                 self.agent.memory.rewards.append(reward)
 
-                timestep += 1
                 current_episode_reward += reward
 
                 # Update agent by optimizing its model
-                if timestep % update_timestep == 0:
+                if episode_step % update_timestep == 0:
                     self.agent.optimize_model(episode_step)
 
                 # TODO: If continuous action space, add decay action std
-                if timestep % action_std_decay_freq == 0:
+                if episode_step % action_std_decay_freq == 0:
                     self.agent.decay_action_std(
                         action_std_decay_rate, min_action_std)
 
                 # TODO: Save the model checkpoint
-                LOGGER.info("Load model checkpoints...")
+                LOGGER.info("Save model checkpoints...")
                 id_trained_model = 7
-                if timestep % save_model_every == 0:
+                if episode_step % save_model_every == 0:
                     self.agent.save(checkpoint_path)
 
                 if done:
                     break
-
+            timestep += 1
+        
         self.env.close()
         self.agent.writer.flush()
         self.agent.writer.close()
@@ -225,14 +235,11 @@ class Run(object):
         buys = []
         sells = []
 
-        print(self.kwargs["fitting_file"])
 
-        for i in range(100):
+        for i in range(600):
             state = torch.Tensor(state)
             action = self.agent.act(state)
 
-            print("Amount taken in test {}".format(action[0].item()))
-            print("Action taken in test {}".format(action[1].item()))
 
             if action[1].item() == 0:
                 buys.append(i)
@@ -248,6 +255,8 @@ class Run(object):
                 break
 
                 self.env.get_transaction_df(i_episode)
+        
+        self.daily_returns.append(self.env.portfolio.get_net_worth())
 
     def start(self) -> None:
         """
@@ -264,27 +273,51 @@ class Run(object):
             self.env_name, "hppo")
         weights_filename = os.path.join(output_directory, weight_name)
         LOGGER.info("weights_filename: {}".format(weights_filename))
-
         if self.train:
+            print("Starts training.")
             # Train the agent
-            if self.use_logger:
-                with self.experiment.train():
-                    self.train_agent(nb_episodes=10, max_t=2)
-            else:
-                self.train_agent(nb_episodes=10, max_t=2)
+            for i in range(1, self.nb_training_days):
+                if self.use_logger:
+                    with self.experiment.train():
+                        self.train_agent(nb_episodes=1)
+                else:
+                    self.train_agent(nb_episodes=1)
+
+                self.env.get_transaction_df(data_days[i], "run_nb_{}".format(i))
+                if i == self.nb_training_days-1:
+                    break
+                self.kwargs["fitting_file"] = data_days[i]
+                self.kwargs["testing_file"] = data_days[i+1]
+                self.env = gym.make(**self.kwargs)
             print(" ----- ")
             LOGGER.info("training over.")
+            print(self.daily_returns)
 
         else:
-            if self.use_logger:
-                with self.experiment.test():
+            print("Starts testing.")
+            for i in range(1, self.nb_testing_days):
+                if self.use_logger:
+                    with self.experiment.test():
+                        self.test_agent()
+                else:
                     self.test_agent()
-            else:
-                self.test_agent()
+
+                self.env.get_transaction_df(data_days[i], "run_nb_{}".format(i))
+                self.kwargs["fitting_file"] = data_days[i]
+                self.kwargs["testing_file"] = data_days[i+1]
+                self.env = gym.make(**self.kwargs)
+            
             print("Finish testing.")
-            self.env.get_transaction_df("test_ep")
+            
             print(self.env.position_stats())
-            self.env.close()
+            print(self.daily_returns)
+            self.env.plot_trade_history("plots_viz")
+
+        self.env.portfolio.get_portfolio()
+        print("buys -> {}".format(self.env.buys))
+        print()
+        print("sells -> {}".format(self.env.sells))
+        self.env.close()
 
     def log_environment_details(self):
         print("-- Environment details -- ")

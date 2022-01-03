@@ -46,7 +46,7 @@ class Agent:
     """
 
     def __init__(self, state_size, action_size, lr_order=0.001, lr_bid=0.001, lr_critic=0.005,
-                 gamma=0.99, K_epochs=10, eps_clip=0.2, action_std=0.6):
+                 gamma=0.99, K_epochs=10, eps_clip=0.2, action_std=0.6, window_size=100):
         """
         Agent Parameters
         ======
@@ -65,6 +65,7 @@ class Agent:
         self.lr_critic = lr_critic
         self.K_epochs = K_epochs
         self.eps_clip = eps_clip
+        self.window_size = window_size
 
         """
         # DQN Agent Q-Network
@@ -83,7 +84,7 @@ class Agent:
         '''
 
         self.policy = ActorCritic(
-            self.state_size, self.action_size, action_std).to(device)
+            self.state_size, self.action_size, action_std, self.window_size).to(device)
 
         # Optimize over parameters of both policies, on order and and bid networks of the actor and on the critic network
         self.optimizer = optim.Adam([
@@ -101,7 +102,7 @@ class Agent:
         self.memory = RolloutBuffer()
 
         self.policy_old = ActorCritic(
-            self.state_size, self.action_size, action_std).to(device)
+            self.state_size, self.action_size, action_std, self.window_size).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
 
         # Initialize time step (for updating every UPDATE_EVERY steps)
@@ -131,6 +132,7 @@ class Agent:
             state (array_like): current state
             eps (float): epsilon, for epsilon-greedy action selection
         """
+
         with torch.no_grad():
             # t.max(1) will return largest column value of each row.
             # second column on max result is index of where max element was
@@ -139,6 +141,7 @@ class Agent:
             amount, action_type, action_logprob = self.policy_old.act(state)
 
         self.memory.states.append(state)
+        print("memory in agent  {}".format(self.memory.states[0].shape))
         self.memory.action_types.append(action_type)
         self.memory.amounts.append(amount)
         self.memory.logprobs.append(action_logprob)
@@ -152,6 +155,8 @@ class Agent:
         for reward in reversed(self.memory.rewards):
             discounted_reward = reward + (self.gamma * discounted_reward)
             rewards.insert(0, discounted_reward)
+        
+        
 
         # Normalize rewards
         rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
@@ -160,21 +165,20 @@ class Agent:
         # Check if should keep that but makes sure it's shape Tensor(scalar)
         rewards = torch.squeeze(rewards)
 
-        print("In the buffer:")
-        print("memory states : {}".format(self.memory.states))
-        print("memory action_types : {}".format(self.memory.action_types))
-        print("memory logprobs : {}".format(self.memory.logprobs))
-
+        print("before squeeze {}".format(torch.stack(
+            self.memory.states, dim=0).shape))
         # convert list to tensor
         old_states = torch.squeeze(torch.stack(
-            self.memory.states, dim=0)).to(device)
+            self.memory.states, dim=0), dim=0).to(device)
         old_actions = torch.squeeze(torch.stack(
-            self.memory.action_types, dim=0)).to(device)
+            self.memory.action_types, dim=0), dim=0).to(device)
         old_logprobs = torch.squeeze(torch.stack(
-            self.memory.logprobs, dim=0)).to(device)
+            self.memory.logprobs, dim=0), dim=0).to(device)
 
         print("- - - - - - - - - - - -")
         for _ in range(self.K_epochs):
+            
+            print("old states  {}".format(old_states.shape))
 
             # Evaluating old actions and values
             logprobs, state_values, dist_entropy = self.policy.evaluate(
@@ -182,7 +186,7 @@ class Agent:
 
             # match state_values tensor dimensions with rewards tensor, Tensor(scalar)
             state_values = torch.squeeze(state_values)
-
+            print(" state values {}".format(state_values.shape))
             # Finding the ratio (pi_theta / pi_theta__old)
             ratios = torch.exp(logprobs - old_logprobs.detach())
 

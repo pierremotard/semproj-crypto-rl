@@ -61,7 +61,7 @@ parser.add_argument('--mode',
                     help="Training or testing mode. " +
                          "If train, then agent starts learning, " +
                          "If test, then agent is tested",
-                    type=bool)
+                    type=str)
 parser.add_argument('--reward_type',
                     default='default',
                     choices=['default',
@@ -103,7 +103,14 @@ parser.add_argument('--logger',
                     default=False,
                     help="If TRUE, uses CometML to track the experiment",
                     type=bool)
-
+parser.add_argument('--nb_training_days',
+                    default=3,
+                    help="Number of days to train for",
+                    type=int)
+parser.add_argument('--nb_testing_days',
+                    default=2,
+                    help="Number of days to test for",
+                    type=int)
 
 args = vars(parser.parse_args())
 

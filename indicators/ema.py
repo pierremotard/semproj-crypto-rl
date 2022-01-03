@@ -32,6 +32,19 @@ class ExponentialMovingAverage(object):
             self._value = value
             return
         # (1 - alpha) * new current value + alpha * prev ema
+        # print("Alpha {}".format(self.alpha))
+        # print("Value {}".format(value))
+        # print(type(value))
+        # print("_value {}".format(self._value))
+        # print()
+
+        #TODO: Check if that makes sense, maybe not because the 94 remaining cols are concatenated hence by appending zeros we 
+        #dont match the desired / missing cols
+        # if len(value) < len(self._value):
+        #     zeros_padding = np.zeros(len(self._value) - len(value))
+        #     value = np.append(value, zeros_padding)
+        
+        
         self._value = (1. - self.alpha) * value + self.alpha * self._value
 
     @property
@@ -95,6 +108,7 @@ def apply_ema_all_data(
             ema.step(value=row)
             smoothed_data.append(ema.value)
         smoothed_data = np.asarray(smoothed_data, dtype=np.float32)
+
         return pd.DataFrame(smoothed_data, columns=labels, index=data.index)
     elif isinstance(ema, list):
         LOGGER.info("Applying list of EMAs to data...")

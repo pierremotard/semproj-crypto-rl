@@ -140,11 +140,12 @@ class Visualize(object):
         axs[0].spines['left'].set_color("black")
         axs[0].grid(color='grey', linestyle='-', linewidth=0.25, alpha=0.5)
 
-        axs[0].scatter(x=long_fills, y=midpoints[long_fills], label='buys', alpha=0.7,
-                       color='green', marker="^")
 
-        axs[0].scatter(x=short_fills, y=midpoints[short_fills], label='sells', alpha=0.7,
-                       color='red', marker="v")
+        # axs[0].scatter(x=long_fills, y=midpoints[long_fills], label='buys', alpha=0.7,
+        #                color='green', marker="^")
+
+        # axs[0].scatter(x=short_fills, y=midpoints[short_fills], label='sells', alpha=0.7,
+        #                color='red', marker="v")
 
         axs[1].plot(inventory, label='inventory', color='orange')
         axs[1].axhline(0., color='grey')

@@ -200,20 +200,6 @@ class DataPipeline(object):
         data_used_in_environment = os.path.join(DATA_PATH, testing_file)
         data = self.import_csv(filename=data_used_in_environment)
 
-        print("DATA HEAD")
-        print(data.head())
-        print("---")
-        print("DATA MIDDLE")
-        print(data.iloc[1000:1010, :2])
-        print("DATA MIDDLE 2")
-        print(data.iloc[4000:4010, :2])
-        print("DATA MIDDLE 3")
-        print(data.iloc[40000:40010, :2])
-        print("DATA TAIL")
-        print(data.tail())
-        print("DATA SHAPE")
-        print(data.shape)
-
         # Raw midpoint prices for back-testing environment
         midpoint_prices = data['midpoint']
 
