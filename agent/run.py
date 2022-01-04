@@ -24,16 +24,16 @@ data_days = ["XBTUSD_2020-01-02.csv.xz", "XBTUSD_2020-01-03.csv.xz", "XBTUSD_202
 
 #----------- PPO hyperparameters -----------#
 max_episode_len = 15000
-update_timestep = 80 # max_episode_len * 2       # update policy every n timesteps
+update_timestep = 40 # max_episode_len * 2       # update policy every n timesteps
 # update policy for K epochs in one PPO update
 K_epochs = 50
 
 eps_clip = 0.2              # clip parameter for PPO
 gamma = 0.99                # discount factor
 
-lr_order = 0.001            # learning rate for order actor network
-lr_bid = 0.001              # learning rate for bid actor network
-lr_critic = 0.005           # learning rate for critic network
+lr_order = 0.01            # learning rate for order actor network
+lr_bid = 0.01              # learning rate for bid actor network
+lr_critic = 0.05           # learning rate for critic network
 
 # starting std for action distribution (Multivariate Normal)
 action_std = 0.6
@@ -44,6 +44,8 @@ action_std_decay_rate = 0.05
 # minimum action_std (stop decay after action_std <= min_action_std)
 min_action_std = 0.1
 
+max_grad_norm = 0.5
+
 save_model_every = 1000
 id_trained_model = 0
 checkpoint_path = "saved_models/PPO_{}.pth".format(id_trained_model)
@@ -51,9 +53,9 @@ checkpoint_path = "saved_models/PPO_{}.pth".format(id_trained_model)
 random_seed = 0         # set random seed if required (0 = no random seed)
 
 hyper_params = {
-    "lr_order": 0.001,
-    "lr_bid": 0.001,
-    "lr_critic": 0.05
+    "lr_order": lr_order,
+    "lr_bid": lr_bid,
+    "lr_critic": lr_critic
 }
 
 
@@ -117,7 +119,7 @@ class Run(object):
         print(self.env.action_space.n)
         self.window_size = self.env.window_size
         self.agent = Agent(self.env.observation_space.shape[1], action_size=self.env.action_space.n,
-                           lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std, window_size=self.window_size)
+                           lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std, window_size=self.window_size, max_grad_norm=max_grad_norm)
 
         self.train = str(mode) == 'train'
         print("Mode TRAINING") if self.train else print("Mode TESTING")
@@ -157,7 +159,8 @@ class Run(object):
             print("Init state shape {}".format(state.shape))
             current_episode_reward = 0
 
-            for episode_step in range(max_episode_len):
+            # Make sure it starts at 1 > 0 to avoid having an optimization step at the very first step
+            for episode_step in range(1, max_episode_len):
                 if episode_step % 500:
                     print("New step {}".format(episode_step))
 
@@ -179,7 +182,7 @@ class Run(object):
                 self.agent.memory.rewards.append(reward)
 
                 current_episode_reward += reward
-
+                print("episode_step {}".format(episode_step))
                 # Update agent by optimizing its model
                 if episode_step % update_timestep == 0:
                     self.agent.optimize_model(episode_step)

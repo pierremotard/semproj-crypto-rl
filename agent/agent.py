@@ -46,7 +46,7 @@ class Agent:
     """
 
     def __init__(self, state_size, action_size, lr_order=0.001, lr_bid=0.001, lr_critic=0.005,
-                 gamma=0.99, K_epochs=10, eps_clip=0.2, action_std=0.6, window_size=100):
+                 gamma=0.99, K_epochs=10, eps_clip=0.2, action_std=0.6, window_size=100, max_grad_norm=0.5):
         """
         Agent Parameters
         ======
@@ -66,6 +66,7 @@ class Agent:
         self.K_epochs = K_epochs
         self.eps_clip = eps_clip
         self.window_size = window_size
+        self.max_grad_norm = max_grad_norm
 
         """
         # DQN Agent Q-Network
@@ -149,9 +150,12 @@ class Agent:
         return amount, action_type
 
     def optimize_model(self, epoch):
+        print("Starts optimization")
         # Monte carlo estimate of rewards
         rewards = []
         discounted_reward = 0
+        print("rollout rewards : {}".format(self.memory.rewards))
+        print("len rollout rewards : {}".format(len(self.memory.rewards)))
         for reward in reversed(self.memory.rewards):
             discounted_reward = reward + (self.gamma * discounted_reward)
             rewards.insert(0, discounted_reward)
@@ -222,15 +226,18 @@ class Agent:
 
             # final loss of clipped objective PPO
             # Should be shape torch.Size([scalar])
-            loss = -torch.min(surr1, surr2) + 0.5 * \
-                self.MseLoss(state_values, rewards) - 0.01*dist_entropy
+            loss = -torch.min(surr1, surr2).mean() + 0.5 * \
+                self.MseLoss(state_values, rewards) - 0.0*dist_entropy
 
             self.writer.add_scalar(
                 "Loss/train", loss.mean(), global_step=epoch)
 
             # take gradient step
             self.optimizer.zero_grad()
-            loss.mean().backward()
+            loss.backward()
+            nn.utils.clip_grad.clip_grad_norm_(self.policy.actor.order_net.parameters(), self.max_grad_norm)
+            nn.utils.clip_grad.clip_grad_norm_(self.policy.actor.bid_net.parameters(), self.max_grad_norm)
+            nn.utils.clip_grad.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
             self.optimizer.step()
 
         # Copy new weights into old policy
