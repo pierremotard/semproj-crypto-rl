@@ -25,10 +25,8 @@ class DQN2(nn.Module):
 	def forward(self, input):
 		# rint(input.size())
 		x = self.first_two_layers(input)
-		# print(x.size())
 		
 		lstm_out, hs = self.lstm(x)
-		# print(lstm_out.size())
 
 		batch_size, seq_len, mid_dim = lstm_out.shape
 		linear_in = lstm_out.contiguous().view(seq_len * batch_size, mid_dim)

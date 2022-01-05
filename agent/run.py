@@ -15,16 +15,17 @@ import numpy as np
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-data_days = ["XBTUSD_2020-01-02.csv.xz", "XBTUSD_2020-01-03.csv.xz", "XBTUSD_2020-01-04.csv.xz", 
-            "XBTUSD_2020-01-05.csv.xz", "XBTUSD_2020-01-06.csv.xz", "XBTUSD_2020-01-07.csv.xz", "XBTUSD_2020-01-08.csv.xz",
-            "XBTUSD_2020-01-09.csv.xz", "XBTUSD_2020-01-10.csv.xz", "XBTUSD_2020-01-11.csv.xz", "XBTUSD_2020-01-12.csv.xz"]
+data_days = ["XBTUSD_2020-01-02.csv.xz", "XBTUSD_2020-01-03.csv.xz", "XBTUSD_2020-01-04.csv.xz",
+             "XBTUSD_2020-01-05.csv.xz", "XBTUSD_2020-01-06.csv.xz", "XBTUSD_2020-01-07.csv.xz", "XBTUSD_2020-01-08.csv.xz",
+             "XBTUSD_2020-01-09.csv.xz", "XBTUSD_2020-01-10.csv.xz", "XBTUSD_2020-01-11.csv.xz", "XBTUSD_2020-01-12.csv.xz"]
 
 #----------- Env hyperparameters -----------#
 
 
 #----------- PPO hyperparameters -----------#
-max_episode_len = 15000
-update_timestep = 40 # max_episode_len * 2       # update policy every n timesteps
+max_training_steps = 75000
+max_episode_len = max_training_steps
+update_timestep = 100  # max_episode_len * 2       # update policy every n timesteps
 # update policy for K epochs in one PPO update
 K_epochs = 50
 
@@ -46,7 +47,7 @@ min_action_std = 0.1
 
 max_grad_norm = 0.5
 
-save_model_every = 1000
+save_model_every = 2000
 id_trained_model = 0
 checkpoint_path = "saved_models/PPO_{}.pth".format(id_trained_model)
 
@@ -55,7 +56,10 @@ random_seed = 0         # set random seed if required (0 = no random seed)
 hyper_params = {
     "lr_order": lr_order,
     "lr_bid": lr_bid,
-    "lr_critic": lr_critic
+    "lr_critic": lr_critic,
+    "max_training_steps": max_training_steps,
+    "max_episode_len": max_episode_len,
+    "update_timestep": update_timestep
 }
 
 
@@ -112,6 +116,7 @@ class Run(object):
         self.memory_frame_stack = 1  # Number of frames to stack e.g., 1.
 
         self.daily_returns = []
+        self.rewards = []
 
         # Instantiate DQN model
         print(self.env.observation_space.shape)
@@ -123,11 +128,10 @@ class Run(object):
 
         self.train = str(mode) == 'train'
         print("Mode TRAINING") if self.train else print("Mode TESTING")
-        
+
         self.nb_training_days = nb_training_days
         self.nb_testing_days = nb_testing_days
 
-            
         self.cwd = os.path.dirname(os.path.realpath(__file__))
 
     def __str__(self):
@@ -147,11 +151,13 @@ class Run(object):
 
         """
 
+        STEPS_DONE = []
+
         steps_buy = []
         steps_sell = []
 
-        timestep = 0
-        while timestep <= nb_episodes:
+        timestep = 1
+        while timestep < max_training_steps:
             print("------------------------------------")
             print("New episode {}".format(timestep))
             print("------------------------------------\n\n")
@@ -159,16 +165,16 @@ class Run(object):
             print("Init state shape {}".format(state.shape))
             current_episode_reward = 0
 
+            EPISODE_STEPS_DONE = []
+
             # Make sure it starts at 1 > 0 to avoid having an optimization step at the very first step
             for episode_step in range(1, max_episode_len):
-                if episode_step % 500:
-                    print("New step {}".format(episode_step))
+                EPISODE_STEPS_DONE.append(episode_step)
 
-                state = torch.Tensor(state).unsqueeze(0)
-                print("state in run {}".format(state.shape))
+                state = torch.Tensor(state).unsqueeze(dim=0).view(
+                    1, -1)  # Add a first dim, 1 to batch_size
 
                 amount, action_type = self.agent.act(state)
-
 
                 state, reward, done, _ = self.env.step(
                     torch.cat((amount, action_type.unsqueeze(0)), dim=0))
@@ -182,9 +188,9 @@ class Run(object):
                 self.agent.memory.rewards.append(reward)
 
                 current_episode_reward += reward
-                print("episode_step {}".format(episode_step))
                 # Update agent by optimizing its model
                 if episode_step % update_timestep == 0:
+                    print("Timestep {}, optimize".format(timestep))
                     self.agent.optimize_model(episode_step)
 
                 # TODO: If continuous action space, add decay action std
@@ -192,16 +198,19 @@ class Run(object):
                     self.agent.decay_action_std(
                         action_std_decay_rate, min_action_std)
 
-                # TODO: Save the model checkpoint
-                LOGGER.info("Save model checkpoints...")
-                id_trained_model = 7
-                if episode_step % save_model_every == 0:
-                    self.agent.save(checkpoint_path)
+                # Save the model checkpoint
+                # if episode_step % save_model_every == 0:
+                #     self.agent.save(checkpoint_path)
+
+                timestep += 1
 
                 if done:
                     break
-            timestep += 1
-        
+            
+            STEPS_DONE.append(EPISODE_STEPS_DONE)
+
+        print("STEPS DONE : ")
+        print(STEPS_DONE)
         self.env.close()
         self.agent.writer.flush()
         self.agent.writer.close()
@@ -210,6 +219,8 @@ class Run(object):
                    "saved_models/order_net_checkpoint.pth")
         torch.save(self.agent.policy.actor.bid_net.state_dict(),
                    "saved_models/bid_net_checkpoint.pth")
+        torch.save(self.agent.policy.critic.state_dict(),
+                   "saved_models/critic_net_checkpoint.pth")
 
     def test_agent(self):
         print("Load network from checkpoint ...")
@@ -217,6 +228,8 @@ class Run(object):
             torch.load("saved_models/order_net_checkpoint.pth"))
         self.agent.policy.actor.bid_net.load_state_dict(
             torch.load("saved_models/bid_net_checkpoint.pth"))
+        # self.agent.policy.critic.load_state_dict(
+        #     torch.load("saved_models/critic_net_checkpoint.pth"))
         print("Checkpoint loaded.")
         print("Start testing ...")
 
@@ -232,25 +245,30 @@ class Run(object):
         self.agent.load(checkpoint_path)
 
         episode_reward = 0
+
         state = self.env.reset()
-        
+
         info = []
         buys = []
         sells = []
 
+        for i in range(3000):
+            state = torch.Tensor(state).unsqueeze(dim=0).view(1, -1)
+            amount, action_type = self.agent.act(state)
 
-        for i in range(600):
-            state = torch.Tensor(state)
-            action = self.agent.act(state)
-
-
-            if action[1].item() == 0:
+            if action_type.item() == 0:
                 buys.append(i)
-            if action[1].item() == 1:
+            if action_type.item() == 1:
                 sells.append(i)
 
-            state, reward, done, info = self.env.step(action)
+            state, reward, done, _ = self.env.step(
+                torch.cat((amount, action_type.unsqueeze(0)), dim=0))
+            
             episode_reward += reward
+            self.rewards.append(reward)
+            if self.use_logger:
+                    self.experiment.log_metric(
+                        "reward", reward, step=i)
             # self.env.render()    not working yet
 
             if done:
@@ -258,7 +276,7 @@ class Run(object):
                 break
 
                 self.env.get_transaction_df(i_episode)
-        
+
         self.daily_returns.append(self.env.portfolio.get_net_worth())
 
     def start(self) -> None:
@@ -279,6 +297,8 @@ class Run(object):
         if self.train:
             print("Starts training.")
             # Train the agent
+            # Starts at 1 because env is already initialized at this point, ends at nb_training_days excluded because i
+            # points to the fitting file, not the testing file
             for i in range(1, self.nb_training_days):
                 if self.use_logger:
                     with self.experiment.train():
@@ -286,7 +306,8 @@ class Run(object):
                 else:
                     self.train_agent(nb_episodes=1)
 
-                self.env.get_transaction_df(data_days[i], "run_nb_{}".format(i))
+                self.env.get_transaction_df(
+                    data_days[i], self.rewards, "run_nb_{}".format(i))
                 if i == self.nb_training_days-1:
                     break
                 self.kwargs["fitting_file"] = data_days[i]
@@ -298,20 +319,21 @@ class Run(object):
 
         else:
             print("Starts testing.")
-            for i in range(1, self.nb_testing_days):
+            for i in range(self.nb_training_days, self.nb_testing_days+self.nb_training_days):
+                self.kwargs["fitting_file"] = data_days[i]
+                self.kwargs["testing_file"] = data_days[i+1]
+                self.env = gym.make(**self.kwargs)
                 if self.use_logger:
                     with self.experiment.test():
                         self.test_agent()
                 else:
                     self.test_agent()
 
-                self.env.get_transaction_df(data_days[i], "run_nb_{}".format(i))
-                self.kwargs["fitting_file"] = data_days[i]
-                self.kwargs["testing_file"] = data_days[i+1]
-                self.env = gym.make(**self.kwargs)
-            
+                self.env.get_transaction_df(
+                    data_days[i], self.rewards, "run_nb_{}".format(i))
+
             print("Finish testing.")
-            
+
             print(self.env.position_stats())
             print(self.daily_returns)
             self.env.plot_trade_history("plots_viz")

@@ -60,8 +60,6 @@ class Portfolio:
         ])
 
     def execute_order(self, action_type, amount, price, fee):
-        print("Update portfolio with {} order.".format(action_type))
-        print("Previously")
         if action_type == 'buy':
             total_possible = self.balance / price
             shares_bought = total_possible * amount
@@ -71,7 +69,6 @@ class Portfolio:
             self.update_shares_held(shares_bought)
             self.update_net_worth(price)
         elif action_type == 'sell':
-            print("Update portfolio with sell order.")
             shares_sold = self.shares_held * amount
             order_cost = shares_sold * price
             full_cost = order_cost - fee
@@ -80,7 +77,6 @@ class Portfolio:
             self.update_net_worth(price)
         else:
             pass
-        print("After")
         # self.get_portfolio()
 
     def reset(self):

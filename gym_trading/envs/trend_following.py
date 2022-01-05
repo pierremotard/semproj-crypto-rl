@@ -63,7 +63,6 @@ class TrendFollowing(BaseEnvironment):
             self.transactions.loc[self.local_step_number] = 0
 
         elif action == 1:  # buy
-            print("Buy order.")
             self.transactions.loc[self.local_step_number] = 1
             self.buys.append(self.local_step_number)
 
@@ -88,7 +87,6 @@ class TrendFollowing(BaseEnvironment):
                                   'unable to place an order with broker').format(action))
 
         elif action == 2:  # sell
-            print("Sell order.")
             self.sells.append(self.local_step_number)
             self.transactions.loc[self.local_step_number] = 2
             # Deduct transaction costs

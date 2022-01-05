@@ -609,9 +609,9 @@ class BaseEnvironment(Env, ABC):
             observation = np.expand_dims(observation, axis=-1)
         return observation
 
-    def get_transaction_df(self, datafile, episode):
+    def get_transaction_df(self, datafile, rewards, episode):
         episode = str(episode)
-        plot_transactions(self.buys, self.sells, self.net_worth_values, self.seen, datafile, episode)
+        plot_transactions(self.buys, self.sells, self.net_worth_values, self.seen, rewards, datafile, episode)
 
         return
 

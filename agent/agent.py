@@ -142,7 +142,6 @@ class Agent:
             amount, action_type, action_logprob = self.policy_old.act(state)
 
         self.memory.states.append(state)
-        print("memory in agent  {}".format(self.memory.states[0].shape))
         self.memory.action_types.append(action_type)
         self.memory.amounts.append(amount)
         self.memory.logprobs.append(action_logprob)
@@ -150,17 +149,13 @@ class Agent:
         return amount, action_type
 
     def optimize_model(self, epoch):
-        print("Starts optimization")
         # Monte carlo estimate of rewards
         rewards = []
         discounted_reward = 0
-        print("rollout rewards : {}".format(self.memory.rewards))
-        print("len rollout rewards : {}".format(len(self.memory.rewards)))
+        # print("Length rollout rewards : {}".format(len(self.memory.rewards)))
         for reward in reversed(self.memory.rewards):
             discounted_reward = reward + (self.gamma * discounted_reward)
             rewards.insert(0, discounted_reward)
-        
-        
 
         # Normalize rewards
         rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
@@ -169,20 +164,15 @@ class Agent:
         # Check if should keep that but makes sure it's shape Tensor(scalar)
         rewards = torch.squeeze(rewards)
 
-        print("before squeeze {}".format(torch.stack(
-            self.memory.states, dim=0).shape))
         # convert list to tensor
         old_states = torch.squeeze(torch.stack(
-            self.memory.states, dim=0), dim=0).to(device)
+            self.memory.states, dim=0)).to(device)
         old_actions = torch.squeeze(torch.stack(
-            self.memory.action_types, dim=0), dim=0).to(device)
+            self.memory.action_types, dim=0)).to(device)
         old_logprobs = torch.squeeze(torch.stack(
-            self.memory.logprobs, dim=0), dim=0).to(device)
+            self.memory.logprobs, dim=0)).to(device)
 
-        print("- - - - - - - - - - - -")
         for _ in range(self.K_epochs):
-            
-            print("old states  {}".format(old_states.shape))
 
             # Evaluating old actions and values
             logprobs, state_values, dist_entropy = self.policy.evaluate(
@@ -190,7 +180,6 @@ class Agent:
 
             # match state_values tensor dimensions with rewards tensor, Tensor(scalar)
             state_values = torch.squeeze(state_values)
-            print(" state values {}".format(state_values.shape))
             # Finding the ratio (pi_theta / pi_theta__old)
             ratios = torch.exp(logprobs - old_logprobs.detach())
 
@@ -226,7 +215,7 @@ class Agent:
 
             # final loss of clipped objective PPO
             # Should be shape torch.Size([scalar])
-            loss = -torch.min(surr1, surr2).mean() + 0.5 * \
+            loss = -torch.min(surr1, surr2) + 0.5 * \
                 self.MseLoss(state_values, rewards) - 0.0*dist_entropy
 
             self.writer.add_scalar(
@@ -234,10 +223,13 @@ class Agent:
 
             # take gradient step
             self.optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad.clip_grad_norm_(self.policy.actor.order_net.parameters(), self.max_grad_norm)
-            nn.utils.clip_grad.clip_grad_norm_(self.policy.actor.bid_net.parameters(), self.max_grad_norm)
-            nn.utils.clip_grad.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
+            loss.mean().backward()
+            nn.utils.clip_grad.clip_grad_norm_(
+                self.policy.actor.order_net.parameters(), self.max_grad_norm)
+            nn.utils.clip_grad.clip_grad_norm_(
+                self.policy.actor.bid_net.parameters(), self.max_grad_norm)
+            nn.utils.clip_grad.clip_grad_norm_(
+                self.policy.critic.parameters(), self.max_grad_norm)
             self.optimizer.step()
 
         # Copy new weights into old policy
