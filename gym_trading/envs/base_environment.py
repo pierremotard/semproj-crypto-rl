@@ -294,6 +294,7 @@ class BaseEnvironment(Env, ABC):
                 step_amount = action[0].item()
                 step_action_type = int(action[1].item())
             else:
+                #do nothing
                 step_action_type = 0
 
             # Get current step's midpoint and change in midpoint price percentage
@@ -344,17 +345,18 @@ class BaseEnvironment(Env, ABC):
             # print("long_filled : {}".format(long_filled))
             # print("short_filled : {}".format(short_filled))
             price = 0
+            # print("Step number : {}".format(self.local_step_number))
             if step_action_type == 1:
                 str_action_type = 'buy'
                 price = self.best_ask
                 self.portfolio.execute_order(str_action_type, step_amount, price, MARKET_ORDER_FEE)
-            elif step_action_type == 1:
+            elif step_action_type == 2:
                 str_action_type = 'sell'
                 price = self.best_bid
                 self.portfolio.execute_order(str_action_type, step_amount, price, MARKET_ORDER_FEE)
             else:
                 str_action_type = 'hold'
-            
+            # print(str_action_type)
             self.net_worth_values.append(self.portfolio.get_net_worth())
 
             # Get PnL from any filled MARKET orders AND action penalties for invalid
@@ -418,7 +420,8 @@ class BaseEnvironment(Env, ABC):
         # save rewards to derive cumulative reward
         self.episode_stats.reward += self.reward
 
-        return self.observation, self.reward, self.done, {}
+
+        return self.observation, self.reward, self.done, self.local_step_number
 
     def reset(self) -> np.ndarray:
         """

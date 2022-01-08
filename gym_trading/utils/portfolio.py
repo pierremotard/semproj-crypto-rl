@@ -4,7 +4,7 @@ import numpy as np
 
 class Portfolio:
     def __init__(self, asset):
-        self.initial_account_balance = 10000000
+        self.initial_account_balance = 10000
         self.asset = asset
         self.orders = []
         self.balance = self.initial_account_balance

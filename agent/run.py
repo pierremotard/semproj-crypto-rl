@@ -23,8 +23,7 @@ data_days = ["XBTUSD_2020-01-02.csv.xz", "XBTUSD_2020-01-03.csv.xz", "XBTUSD_202
 
 
 #----------- PPO hyperparameters -----------#
-max_training_steps = 75000
-max_episode_len = max_training_steps
+max_episode_len = 17080
 update_timestep = 100  # max_episode_len * 2       # update policy every n timesteps
 # update policy for K epochs in one PPO update
 K_epochs = 50
@@ -37,7 +36,7 @@ lr_bid = 0.01              # learning rate for bid actor network
 lr_critic = 0.05           # learning rate for critic network
 
 # starting std for action distribution (Multivariate Normal)
-action_std = 0.6
+action_std = 0.35 # previously 0.6
 # action_std decay frequency (in num timesteps)
 action_std_decay_freq = int(2e5)
 # linearly decay action_std (action_std = action_std - action_std_decay_rate)
@@ -49,7 +48,7 @@ max_grad_norm = 0.5
 
 save_model_every = 2000
 id_trained_model = 0
-checkpoint_path = "saved_models/PPO_{}.pth".format(id_trained_model)
+checkpoint_path = "saved_models/"
 
 random_seed = 0         # set random seed if required (0 = no random seed)
 
@@ -57,7 +56,6 @@ hyper_params = {
     "lr_order": lr_order,
     "lr_bid": lr_bid,
     "lr_critic": lr_critic,
-    "max_training_steps": max_training_steps,
     "max_episode_len": max_episode_len,
     "update_timestep": update_timestep
 }
@@ -67,7 +65,7 @@ class Run(object):
     name = 'HPPO'
 
     def __init__(self, mode, nb_training_days=3, nb_testing_days=2, number_of_training_steps=1e2, gamma=0.999, load_weights=False,
-                 visualize=False, dueling_network=True, double_dqn=True, logger=False,
+                 visualize=False, dueling_network=True, double_dqn=True, logger='comet',
                  **kwargs):
         """
         Run constructor
@@ -98,7 +96,7 @@ class Run(object):
         log_dir = "tmp/"
         os.makedirs(log_dir, exist_ok=True)
 
-        self.use_logger = logger
+        self.use_logger = logger == 'comet'
         if self.use_logger:
             self.experiment = Experiment(
                 project_name="crypto-trading", api_key="aASgA0tUpW7Y4FxbuD0egr84z", workspace="pierremotard")
@@ -140,77 +138,61 @@ class Run(object):
         return 'Agent = {} | env = {} | number_of_training_steps = {}'.format(
             Run.name, self.env_name, self.number_of_training_steps)
 
-    def train_agent(self, nb_episodes=1, eps_start=1.0, eps_end=0.01, eps_decay=0.996):
+    def train_agent(self, episode_number, eps_start=1.0, eps_end=0.01, eps_decay=0.996):
         """
             Params
             ======
-                nb_episodes (int): maximum number of training epsiodes
+                episode_number (int): number of the episode
                 eps_start (float): starting value of epsilon, for epsilon-greedy action selection
                 eps_end (float): minimum value of epsilon
                 eps_decay (float): mutiplicative factor (per episode) for decreasing epsilon
 
         """
 
-        STEPS_DONE = []
+        print("------------------------------------\n\n")
+        state = self.env.reset()
+        print("Init state shape {}".format(state.shape))
+        current_episode_reward = 0
+        # Make sure it starts at 1 > 0 to avoid having an optimization step at the very first step
+        for episode_step in range(1, max_episode_len):
 
-        steps_buy = []
-        steps_sell = []
+            state = torch.Tensor(state).unsqueeze(dim=0).view(
+                1, -1)  # Add a first dim, 1 to batch_size
 
-        timestep = 1
-        while timestep < max_training_steps:
-            print("------------------------------------")
-            print("New episode {}".format(timestep))
-            print("------------------------------------\n\n")
-            state = self.env.reset()
-            print("Init state shape {}".format(state.shape))
-            current_episode_reward = 0
+            amount, action_type = self.agent.act(state)
 
-            EPISODE_STEPS_DONE = []
+            state, reward, done, local_step_number = self.env.step(
+                torch.cat((amount, action_type.unsqueeze(0)), dim=0))
 
-            # Make sure it starts at 1 > 0 to avoid having an optimization step at the very first step
-            for episode_step in range(1, max_episode_len):
-                EPISODE_STEPS_DONE.append(episode_step)
+            # next_state = torch.tensor(next_state, device=device)
+            # reward = torch.tensor([reward], device=device)
+            if self.use_logger:
+                self.experiment.log_metric(
+                    "reward", reward, step=local_step_number)
 
-                state = torch.Tensor(state).unsqueeze(dim=0).view(
-                    1, -1)  # Add a first dim, 1 to batch_size
+            self.rewards.append(reward)
+            for i in range(4):
+                self.rewards.append(0)
+            self.agent.memory.rewards.append(reward)
 
-                amount, action_type = self.agent.act(state)
+            current_episode_reward += reward
+            # Update agent by optimizing its model
+            if episode_step % update_timestep == 0:
+                print("Timestep {}, optimize".format(local_step_number))
+                self.agent.optimize_model(local_step_number)
 
-                state, reward, done, _ = self.env.step(
-                    torch.cat((amount, action_type.unsqueeze(0)), dim=0))
+            # TODO: If continuous action space, add decay action std
+            if episode_step % action_std_decay_freq == 0:
+                self.agent.decay_action_std(
+                    action_std_decay_rate, min_action_std)
 
-                # next_state = torch.tensor(next_state, device=device)
-                # reward = torch.tensor([reward], device=device)
-                if self.use_logger:
-                    self.experiment.log_metric(
-                        "reward", reward, step=episode_step*(timestep+1))
+            # Save the model checkpoint
+            # if episode_step % save_model_every == 0:
+            #     self.agent.save(checkpoint_path)
 
-                self.agent.memory.rewards.append(reward)
-
-                current_episode_reward += reward
-                # Update agent by optimizing its model
-                if episode_step % update_timestep == 0:
-                    print("Timestep {}, optimize".format(timestep))
-                    self.agent.optimize_model(episode_step)
-
-                # TODO: If continuous action space, add decay action std
-                if episode_step % action_std_decay_freq == 0:
-                    self.agent.decay_action_std(
-                        action_std_decay_rate, min_action_std)
-
-                # Save the model checkpoint
-                # if episode_step % save_model_every == 0:
-                #     self.agent.save(checkpoint_path)
-
-                timestep += 1
-
-                if done:
-                    break
-            
-            STEPS_DONE.append(EPISODE_STEPS_DONE)
-
-        print("STEPS DONE : ")
-        print(STEPS_DONE)
+            if done:
+                break
+        
         self.env.close()
         self.agent.writer.flush()
         self.agent.writer.close()
@@ -228,8 +210,8 @@ class Run(object):
             torch.load("saved_models/order_net_checkpoint.pth"))
         self.agent.policy.actor.bid_net.load_state_dict(
             torch.load("saved_models/bid_net_checkpoint.pth"))
-        # self.agent.policy.critic.load_state_dict(
-        #     torch.load("saved_models/critic_net_checkpoint.pth"))
+        self.agent.policy.critic.load_state_dict(
+            torch.load("saved_models/critic_net_checkpoint.pth"))
         print("Checkpoint loaded.")
         print("Start testing ...")
 
@@ -237,38 +219,34 @@ class Run(object):
         self.log_environment_details()
 
         state_size = self.env.observation_space.shape[0]
-        # action_size = env_test.action_space["action_type"].n
-
-        # test_agent = Agent(state_size, 3, lr_order, lr_bid,
-        #                 lr_critic, gamma, K_epochs, eps_clip, action_std)
-
-        self.agent.load(checkpoint_path)
 
         episode_reward = 0
 
         state = self.env.reset()
 
-        info = []
         buys = []
         sells = []
+        local_step_number = 0
 
-        for i in range(3000):
+        for i in range(5000):
             state = torch.Tensor(state).unsqueeze(dim=0).view(1, -1)
             amount, action_type = self.agent.act(state)
 
-            if action_type.item() == 0:
-                buys.append(i)
             if action_type.item() == 1:
-                sells.append(i)
+                buys.append(local_step_number)
+            if action_type.item() == 2:
+                sells.append(local_step_number)
 
-            state, reward, done, _ = self.env.step(
+            state, reward, done, local_step_number = self.env.step(
                 torch.cat((amount, action_type.unsqueeze(0)), dim=0))
             
             episode_reward += reward
             self.rewards.append(reward)
+            for i in range(4):
+                self.rewards.append(0)
             if self.use_logger:
                     self.experiment.log_metric(
-                        "reward", reward, step=i)
+                        "reward", reward, step=local_step_number)
             # self.env.render()    not working yet
 
             if done:
@@ -276,6 +254,9 @@ class Run(object):
                 break
 
                 self.env.get_transaction_df(i_episode)
+        print("Last local step nb : {}".format(local_step_number))
+        print("Buys : {}".format(buys))
+        print("Sells : {}".format(sells))
 
         self.daily_returns.append(self.env.portfolio.get_net_worth())
 
@@ -299,19 +280,19 @@ class Run(object):
             # Train the agent
             # Starts at 1 because env is already initialized at this point, ends at nb_training_days excluded because i
             # points to the fitting file, not the testing file
-            for i in range(1, self.nb_training_days):
+            for i in range(0, self.nb_training_days):
                 if self.use_logger:
                     with self.experiment.train():
-                        self.train_agent(nb_episodes=1)
+                        self.train_agent(episode_number=i)
                 else:
-                    self.train_agent(nb_episodes=1)
+                    self.train_agent(episode_number=i)
 
                 self.env.get_transaction_df(
-                    data_days[i], self.rewards, "run_nb_{}".format(i))
+                    data_days[i+1], self.rewards, "run_nb_{}".format(i))
                 if i == self.nb_training_days-1:
                     break
-                self.kwargs["fitting_file"] = data_days[i]
-                self.kwargs["testing_file"] = data_days[i+1]
+                self.kwargs["fitting_file"] = data_days[i+1]
+                self.kwargs["testing_file"] = data_days[i+2]
                 self.env = gym.make(**self.kwargs)
             print(" ----- ")
             LOGGER.info("training over.")
@@ -339,9 +320,6 @@ class Run(object):
             self.env.plot_trade_history("plots_viz")
 
         self.env.portfolio.get_portfolio()
-        print("buys -> {}".format(self.env.buys))
-        print()
-        print("sells -> {}".format(self.env.sells))
         self.env.close()
 
     def log_environment_details(self):

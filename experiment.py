@@ -100,9 +100,9 @@ parser.add_argument('--double_dqn',
                     type=bool)
 
 parser.add_argument('--logger',
-                    default=False,
+                    default='comet',
                     help="If TRUE, uses CometML to track the experiment",
-                    type=bool)
+                    type=str)
 parser.add_argument('--nb_training_days',
                     default=3,
                     help="Number of days to train for",
