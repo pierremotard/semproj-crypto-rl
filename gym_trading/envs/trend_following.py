@@ -23,7 +23,12 @@ class TrendFollowing(BaseEnvironment):
         # Environment attributes to override in sub-class
         self.actions = np.eye(3, dtype=np.float32)
 
-        self.action_space = spaces.Discrete(len(self.actions))
+        # self.action_space = spaces.Discrete(len(self.actions))
+        # self.action_space = spaces.Dict({"amount": spaces.Box(low=np.array(0), high=np.array(1)),
+        #                                  "action_type": spaces.Discrete(3)})
+        self.action_space = spaces.Box(
+            low=np.array([0., 0.]), high=np.array([1, 3]), dtype=np.float32)
+
         self.reset()  # Reset to load observation.shape
         self.observation_space = spaces.Box(low=-10., high=10.,
                                             shape=self.observation.shape,
@@ -58,11 +63,19 @@ class TrendFollowing(BaseEnvironment):
 
         self.seen.append(self.local_step_number)
 
-        if action == 0:  # do nothing
+        # print(f"Action in map to broker {action}")
+
+        if action < 0:  # do nothing some steps after an action
+            #print("Idle")
+            action_penalty_reward += ENCOURAGEMENT
+            self.transactions.loc[self.local_step_number] = 0
+        elif action == 0:  # do nothing
+            #print("Hold")
             action_penalty_reward += ENCOURAGEMENT
             self.transactions.loc[self.local_step_number] = 0
 
         elif action == 1:  # buy
+            #print("Buy")
             self.transactions.loc[self.local_step_number] = 1
             self.buys.append(self.local_step_number)
 
@@ -70,7 +83,7 @@ class TrendFollowing(BaseEnvironment):
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE
                 # Added to test if helps to reduce amount of transactions
-                action_penalty_reward -= ENCOURAGEMENT
+                #action_penalty_reward -= ENCOURAGEMENT
 
             if self.broker.short_inventory_count > 0:
                 # Net out existing position
@@ -88,14 +101,15 @@ class TrendFollowing(BaseEnvironment):
                 raise ValueError(('gym_trading.get_reward() Error for action #{} - '
                                   'unable to place an order with broker').format(action))
 
-        elif action == 2:  # sell
+        elif action >= 2:  # sell
+            #print("Sell")
             self.sells.append(self.local_step_number)
             self.transactions.loc[self.local_step_number] = 2
             # Deduct transaction costs
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE
                 # Added to test if helps to reduce amount of transactions
-                action_penalty_reward -= ENCOURAGEMENT
+                # action_penalty_reward -= 1 # ENCOURAGEMENT
 
             if self.broker.long_inventory_count > 0:
                 # Net out existing position

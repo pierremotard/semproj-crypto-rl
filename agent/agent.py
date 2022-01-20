@@ -224,12 +224,12 @@ class Agent:
             # take gradient step
             self.optimizer.zero_grad()
             loss.mean().backward()
-            nn.utils.clip_grad.clip_grad_norm_(
-                self.policy.actor.order_net.parameters(), self.max_grad_norm)
-            nn.utils.clip_grad.clip_grad_norm_(
-                self.policy.actor.bid_net.parameters(), self.max_grad_norm)
-            nn.utils.clip_grad.clip_grad_norm_(
-                self.policy.critic.parameters(), self.max_grad_norm)
+            # nn.utils.clip_grad.clip_grad_norm_(
+            #     self.policy.actor.order_net.parameters(), self.max_grad_norm)
+            # nn.utils.clip_grad.clip_grad_norm_(
+            #     self.policy.actor.bid_net.parameters(), self.max_grad_norm)
+            # nn.utils.clip_grad.clip_grad_norm_(
+            #     self.policy.critic.parameters(), self.max_grad_norm)
             self.optimizer.step()
 
         # Copy new weights into old policy

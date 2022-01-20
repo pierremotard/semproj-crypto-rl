@@ -7,10 +7,13 @@ from configurations import LOGGER
 import os
 import gym
 import gym_trading
-from stable_baselines3 import DQN
 #from stable_baselines3.common.evaluation import evaluate_policy
 #from stable_baselines3.common.monitor import Monitor
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from stable_baselines3 import DQN, PPO, A2C
+import datetime
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -23,7 +26,7 @@ data_days = ["XBTUSD_2020-01-02.csv.xz", "XBTUSD_2020-01-03.csv.xz", "XBTUSD_202
 
 
 #----------- PPO hyperparameters -----------#
-max_episode_len = 17080
+max_episode_len = 1700#80
 update_timestep = 100  # max_episode_len * 2       # update policy every n timesteps
 # update policy for K epochs in one PPO update
 K_epochs = 50
@@ -113,16 +116,20 @@ class Run(object):
         # NOTE: 'Keras-RL' uses its own frame-stacker
         self.memory_frame_stack = 1  # Number of frames to stack e.g., 1.
 
-        self.daily_returns = []
+        self.daily_returns = np.array([])
         self.rewards = []
 
         # Instantiate DQN model
         print(self.env.observation_space.shape)
         print(self.env.observation_space.shape[1])
-        print(self.env.action_space.n)
+        print("action space {}".format(self.env.action_space))
         self.window_size = self.env.window_size
-        self.agent = Agent(self.env.observation_space.shape[1], action_size=self.env.action_space.n,
-                           lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std, window_size=self.window_size, max_grad_norm=max_grad_norm)
+        # self.agent = Agent(self.env.observation_space.shape[1], action_size=self.env.action_space.n,
+        #                    lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std, window_size=self.window_size, max_grad_norm=max_grad_norm)
+
+        self.agent = A2C("MlpPolicy", self.env, learning_rate=0.01, verbose=1)
+
+        self.experiment.log_parameter("agent", "A2C")
 
         self.train = str(mode) == 'train'
         print("Mode TRAINING") if self.train else print("Mode TESTING")
@@ -197,68 +204,87 @@ class Run(object):
         self.agent.writer.flush()
         self.agent.writer.close()
 
-        torch.save(self.agent.policy.actor.order_net.state_dict(),
-                   "saved_models/order_net_checkpoint.pth")
-        torch.save(self.agent.policy.actor.bid_net.state_dict(),
-                   "saved_models/bid_net_checkpoint.pth")
-        torch.save(self.agent.policy.critic.state_dict(),
-                   "saved_models/critic_net_checkpoint.pth")
+        # torch.save(self.agent.policy.actor.order_net.state_dict(),
+        #            "saved_models/order_net_checkpoint.pth")
+        # torch.save(self.agent.policy.actor.bid_net.state_dict(),
+        #            "saved_models/bid_net_checkpoint.pth")
+        # torch.save(self.agent.policy.critic.state_dict(),
+        #            "saved_models/critic_net_checkpoint.pth")
 
     def test_agent(self):
         print("Load network from checkpoint ...")
-        self.agent.policy.actor.order_net.load_state_dict(
-            torch.load("saved_models/order_net_checkpoint.pth"))
-        self.agent.policy.actor.bid_net.load_state_dict(
-            torch.load("saved_models/bid_net_checkpoint.pth"))
-        self.agent.policy.critic.load_state_dict(
-            torch.load("saved_models/critic_net_checkpoint.pth"))
-        print("Checkpoint loaded.")
-        print("Start testing ...")
-
-        print("env details")
-        self.log_environment_details()
-
-        state_size = self.env.observation_space.shape[0]
 
         episode_reward = 0
 
         state = self.env.reset()
-
         buys = []
         sells = []
         local_step_number = 0
 
-        for i in range(5000):
-            state = torch.Tensor(state).unsqueeze(dim=0).view(1, -1)
-            amount, action_type = self.agent.act(state)
+        action_stats = {"amount": [], "side": [], "amount_buy_sell": []}
 
-            if action_type.item() == 1:
-                buys.append(local_step_number)
-            if action_type.item() == 2:
-                sells.append(local_step_number)
+        for i in range(17000):
+            state = torch.Tensor(state).unsqueeze(dim=0) #.view(1, -1)
 
-            state, reward, done, local_step_number = self.env.step(
-                torch.cat((amount, action_type.unsqueeze(0)), dim=0))
+            action, _states = self.agent.predict(state)
+            action = action.squeeze(0)
+
+            # print(f"Action -> {action}")
+            side = action[1]
+            if side > 1 and side <= 2:
+                buys.append(i * 5)
+                action_stats["side"].append(1)
+                action_stats["amount_buy_sell"].append(action[0])
+            elif side > 2:
+                sells.append(i * 5)
+                action_stats["side"].append(2)
+                action_stats["amount_buy_sell"].append(action[0])
+            else:
+                action_stats["side"].append(0)
+            action_stats["amount"].append(action[0])
+
+            state, reward, done, info = self.env.step(action)
             
             episode_reward += reward
             self.rewards.append(reward)
             for i in range(4):
                 self.rewards.append(0)
-            if self.use_logger:
-                    self.experiment.log_metric(
-                        "reward", reward, step=local_step_number)
+            # if self.use_logger:
+            #         self.experiment.log_metric(
+            #             "reward", reward, step=local_step_number)
             # self.env.render()    not working yet
+
+            self.daily_returns=np.append(self.daily_returns, self.env.portfolio.get_net_worth())
+
+            # self.experiment.log_histogram_3d(action_stats["amount_buy_sell"], "amounts", i*5)
+            # self.experiment.log_histogram_3d(action_stats["side"], "sides", i*5)
+            # d = pd.DataFrame(self.daily_returns)
+            # log_return=np.log(d/d.shift())
+            # self.experiment.log_histogram_3d(log_return.to_numpy(), "log returns", i*5)
+
 
             if done:
                 print("Reaches end of data or no more CA$H :(")
                 break
 
                 self.env.get_transaction_df(i_episode)
-        print("Last local step nb : {}".format(local_step_number))
-        print("Buys : {}".format(buys))
-        print("Sells : {}".format(sells))
+        # print("Last local step nb : {}".format(local_step_number))
+        #print("Buys : {}".format(buys))
+        #print("Sells : {}".format(sells))
 
-        self.daily_returns.append(self.env.portfolio.get_net_worth())
+        print("Action states : {}".format(action_stats))
+        self.plot_action_dict(action_stats)
+
+        print("Daily returns {}".format(self.daily_returns))
+        self.plot_log_return(self.daily_returns)
+
+        sharpe_ratio = self.compute_sharpe_ratio(self.daily_returns)
+        print("Sharpe ratio: {}".format(sharpe_ratio))
+
+        self.experiment.log_metric("sharpe ratio", sharpe_ratio)
+
+        
+
 
     def start(self) -> None:
         """
@@ -283,27 +309,33 @@ class Run(object):
             for i in range(0, self.nb_training_days):
                 if self.use_logger:
                     with self.experiment.train():
-                        self.train_agent(episode_number=i)
+                        self.agent.learn(total_timesteps=10000, log_interval=4)
                 else:
-                    self.train_agent(episode_number=i)
+                    self.agent.learn(total_timesteps=10000, log_interval=4)
 
-                self.env.get_transaction_df(
-                    data_days[i+1], self.rewards, "run_nb_{}".format(i))
+                self.agent.save("a2c_saved_model")
+
+                # self.env.get_transaction_df(
+                #     data_days[i+1], self.rewards, "run_nb_{}".format(i))
                 if i == self.nb_training_days-1:
                     break
                 self.kwargs["fitting_file"] = data_days[i+1]
                 self.kwargs["testing_file"] = data_days[i+2]
                 self.env = gym.make(**self.kwargs)
+                self.agent = PPO.load("a2c_saved_model", self.env)
+
             print(" ----- ")
             LOGGER.info("training over.")
             print(self.daily_returns)
 
         else:
             print("Starts testing.")
+
             for i in range(self.nb_training_days, self.nb_testing_days+self.nb_training_days):
                 self.kwargs["fitting_file"] = data_days[i]
                 self.kwargs["testing_file"] = data_days[i+1]
                 self.env = gym.make(**self.kwargs)
+                self.agent = PPO.load("a2c_saved_model", self.env)
                 if self.use_logger:
                     with self.experiment.test():
                         self.test_agent()
@@ -326,3 +358,33 @@ class Run(object):
         print("-- Environment details -- ")
         print(self.env_name)
         print(self.env.observation_space.shape)
+
+
+    def compute_sharpe_ratio(self, values):
+        d = pd.DataFrame(values)
+        returns=(d-d.shift())/d.shift()
+        print(returns.mean().to_numpy().item())
+        print(returns.std().to_numpy().item())
+        return (returns.mean()/returns.std()).to_numpy().item()
+
+    def plot_log_return(self, values):
+        d = pd.DataFrame(values)
+        log_return=np.log(d/d.shift())
+        fig, ax = plt.subplots()
+        log_return.hist(bins=30, ax=ax)
+        curr_time=datetime.datetime.now().strftime("%d_%m-%Hh%M")
+
+        plt.savefig("plots/log_returns_{}.png".format(curr_time))
+
+
+    def plot_action_dict(self, action_stats):
+
+        sides=d = pd.DataFrame(action_stats["side"])
+        amounts=pd.DataFrame(action_stats["amount_buy_sell"])
+        fig, ax = plt.subplots(1, 2)
+        sides.hist(bins=3, ax=ax[0])
+        amounts.hist(bins=100, ax=ax[1])
+
+
+        curr_time=datetime.datetime.now().strftime("%d_%m-%Hh%M")
+        plt.savefig("plots/action_stats_{}.png".format(curr_time))

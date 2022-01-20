@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import deque
 from typing import Union
+from matplotlib.pyplot import step
 
 import numpy as np
 import pandas as pd
@@ -166,6 +167,7 @@ class BaseEnvironment(Env, ABC):
         self.steps_done = []
         self.net_worth_values = []
         self.seen = []
+        self.all_rewards = []
 
         # typecast all data sets to numpy
         self._raw_data = self._raw_data.to_numpy(dtype=np.float32)
@@ -293,9 +295,11 @@ class BaseEnvironment(Env, ABC):
                 self.reward = 0.
                 step_amount = action[0].item()
                 step_action_type = int(action[1].item())
+                if step_action_type == 3:
+                    step_action_type -= 1
             else:
                 #do nothing
-                step_action_type = 0
+                step_action_type = -1
 
             # Get current step's midpoint and change in midpoint price percentage
             self.midpoint = self._midpoint_prices[self.local_step_number]
@@ -346,6 +350,8 @@ class BaseEnvironment(Env, ABC):
             # print("short_filled : {}".format(short_filled))
             price = 0
             # print("Step number : {}".format(self.local_step_number))
+            
+
             if step_action_type == 1:
                 str_action_type = 'buy'
                 price = self.best_ask
@@ -362,6 +368,8 @@ class BaseEnvironment(Env, ABC):
             # Get PnL from any filled MARKET orders AND action penalties for invalid
             # actions made by the agent for future discouragement
             action_penalty_reward, market_pnl = self.map_action_to_broker(action=step_action_type)
+            if step_action_type == -1:
+                step_action_type += 1
             # print(" --- --- --- ")
             # print("STEP AMOUNT {}".format(step_amount))
             # print("STEP ACTION TYPE {}".format(step_action_type))
@@ -375,6 +383,7 @@ class BaseEnvironment(Env, ABC):
 
             
             # print("action_penalty_reward : {}".format(action_penalty_reward))
+            self.all_rewards.append(self.step_reward)
 
             # if current_step == 0:
                 # print("Midpoint : {}".format(self.midpoint))
@@ -421,7 +430,7 @@ class BaseEnvironment(Env, ABC):
         self.episode_stats.reward += self.reward
 
 
-        return self.observation, self.reward, self.done, self.local_step_number
+        return self.observation, self.reward, self.done, {}
 
     def reset(self) -> np.ndarray:
         """
