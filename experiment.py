@@ -111,6 +111,10 @@ parser.add_argument('--nb_testing_days',
                     default=2,
                     help="Number of days to test for",
                     type=int)
+parser.add_argument('--initial_balance',
+                    default=10000,
+                    help="Initial balance of the agent",
+                    type=int)
 
 args = vars(parser.parse_args())
 

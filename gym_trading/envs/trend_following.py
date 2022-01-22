@@ -70,7 +70,7 @@ class TrendFollowing(BaseEnvironment):
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE
                 # Added to test if helps to reduce amount of transactions
-                action_penalty_reward -= ENCOURAGEMENT
+                # action_penalty_reward -= ENCOURAGEMENT
 
             if self.broker.short_inventory_count > 0:
                 # Net out existing position
@@ -95,7 +95,7 @@ class TrendFollowing(BaseEnvironment):
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE
                 # Added to test if helps to reduce amount of transactions
-                action_penalty_reward -= ENCOURAGEMENT
+                # action_penalty_reward -= ENCOURAGEMENT
 
             if self.broker.long_inventory_count > 0:
                 # Net out existing position

@@ -11,7 +11,9 @@ from stable_baselines3 import DQN
 #from stable_baselines3.common.evaluation import evaluate_policy
 #from stable_baselines3.common.monitor import Monitor
 import numpy as np
-
+import pandas as pd
+import matplotlib.pyplot as plt
+import datetime
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -31,12 +33,12 @@ K_epochs = 50
 eps_clip = 0.2              # clip parameter for PPO
 gamma = 0.99                # discount factor
 
-lr_order = 0.01            # learning rate for order actor network
-lr_bid = 0.01              # learning rate for bid actor network
-lr_critic = 0.05           # learning rate for critic network
+lr_order = 0.001            # learning rate for order actor network
+lr_bid = 0.001              # learning rate for bid actor network
+lr_critic = 0.001           # learning rate for critic network
 
 # starting std for action distribution (Multivariate Normal)
-action_std = 0.35 # previously 0.6
+action_std = 0.3 # previously 0.6
 # action_std decay frequency (in num timesteps)
 action_std_decay_freq = int(2e5)
 # linearly decay action_std (action_std = action_std - action_std_decay_rate)
@@ -64,7 +66,7 @@ hyper_params = {
 class Run(object):
     name = 'HPPO'
 
-    def __init__(self, mode, nb_training_days=3, nb_testing_days=2, number_of_training_steps=1e2, gamma=0.999, load_weights=False,
+    def __init__(self, mode, nb_training_days=3, nb_testing_days=2, initial_balance=10000, number_of_training_steps=1e2, gamma=0.99, load_weights=False,
                  visualize=False, dueling_network=True, double_dqn=True, logger='comet',
                  **kwargs):
         """
@@ -114,6 +116,7 @@ class Run(object):
         self.memory_frame_stack = 1  # Number of frames to stack e.g., 1.
 
         self.daily_returns = []
+        self.step_returns = []
         self.rewards = []
 
         # Instantiate DQN model
@@ -129,6 +132,7 @@ class Run(object):
 
         self.nb_training_days = nb_training_days
         self.nb_testing_days = nb_testing_days
+        self.initial_balance = initial_balance
 
         self.cwd = os.path.dirname(os.path.realpath(__file__))
 
@@ -204,7 +208,7 @@ class Run(object):
         torch.save(self.agent.policy.critic.state_dict(),
                    "saved_models/critic_net_checkpoint.pth")
 
-    def test_agent(self):
+    def test_agent(self, day_nb):
         print("Load network from checkpoint ...")
         self.agent.policy.actor.order_net.load_state_dict(
             torch.load("saved_models/order_net_checkpoint.pth"))
@@ -227,15 +231,22 @@ class Run(object):
         buys = []
         sells = []
         local_step_number = 0
+        action_stats = {"amount": [], "side": [], "amount_buy_sell": []}
 
-        for i in range(5000):
+        for i in range(17030):
             state = torch.Tensor(state).unsqueeze(dim=0).view(1, -1)
             amount, action_type = self.agent.act(state)
 
             if action_type.item() == 1:
                 buys.append(local_step_number)
-            if action_type.item() == 2:
+                action_stats["side"].append(1)
+                action_stats["amount_buy_sell"].append(amount.item())
+            elif action_type.item() == 2:
                 sells.append(local_step_number)
+                action_stats["side"].append(2)
+                action_stats["amount_buy_sell"].append(amount.item())
+            else:
+                action_stats["side"].append(0)
 
             state, reward, done, local_step_number = self.env.step(
                 torch.cat((amount, action_type.unsqueeze(0)), dim=0))
@@ -246,17 +257,31 @@ class Run(object):
                 self.rewards.append(0)
             if self.use_logger:
                     self.experiment.log_metric(
-                        "reward", reward, step=local_step_number)
-            # self.env.render()    not working yet
+                        "reward", reward, step=local_step_number + day_nb*85400)
+                    self.experiment.log_metric("net worth", self.env.portfolio.get_net_worth(), step=local_step_number + day_nb*85400)
 
+            # self.env.render()    not working yet
+            self.step_returns.append(self.env.portfolio.get_net_worth())
+            
             if done:
                 print("Reaches end of data or no more CA$H :(")
                 break
 
                 self.env.get_transaction_df(i_episode)
         print("Last local step nb : {}".format(local_step_number))
-        print("Buys : {}".format(buys))
-        print("Sells : {}".format(sells))
+        # print("Buys : {}".format(buys))
+        # print("Sells : {}".format(sells))
+
+        self.plot_action_dict(action_stats)
+
+        # print("Step returns {}".format(self.step_returns))
+        self.plot_log_return(self.step_returns)
+
+        sharpe_ratio = self.compute_sharpe_ratio(self.step_returns)
+        print("Sharpe ratio: {}".format(sharpe_ratio))
+
+        if self.use_logger:
+            self.experiment.log_metric("sharpe ratio", sharpe_ratio)
 
         self.daily_returns.append(self.env.portfolio.get_net_worth())
 
@@ -293,6 +318,7 @@ class Run(object):
                     break
                 self.kwargs["fitting_file"] = data_days[i+1]
                 self.kwargs["testing_file"] = data_days[i+2]
+                self.kwargs["initial_balance"] = self.env.portfolio.get_net_worth()
                 self.env = gym.make(**self.kwargs)
             print(" ----- ")
             LOGGER.info("training over.")
@@ -303,15 +329,17 @@ class Run(object):
             for i in range(self.nb_training_days, self.nb_testing_days+self.nb_training_days):
                 self.kwargs["fitting_file"] = data_days[i]
                 self.kwargs["testing_file"] = data_days[i+1]
+                self.kwargs["initial_balance"] = self.env.portfolio.get_net_worth()
+
                 self.env = gym.make(**self.kwargs)
                 if self.use_logger:
                     with self.experiment.test():
-                        self.test_agent()
+                        self.test_agent(i-self.nb_training_days)
                 else:
-                    self.test_agent()
+                    self.test_agent(i-self.nb_training_days)
 
                 self.env.get_transaction_df(
-                    data_days[i], self.rewards, "run_nb_{}".format(i))
+                    data_days[i], self.rewards, "run_nb_tradeR_{}".format(i))
 
             print("Finish testing.")
 
@@ -326,3 +354,32 @@ class Run(object):
         print("-- Environment details -- ")
         print(self.env_name)
         print(self.env.observation_space.shape)
+
+    def compute_sharpe_ratio(self, values):
+        d = pd.DataFrame(values)
+        returns=(d-d.shift())/d.shift()
+        print(returns.mean().to_numpy().item())
+        print(returns.std().to_numpy().item())
+        return (returns.mean()/returns.std()).to_numpy().item()
+
+    def plot_log_return(self, values):
+        d = pd.DataFrame(values)
+        log_return=np.log(d/d.shift())
+        fig, ax = plt.subplots()
+        log_return.hist(bins=30, ax=ax)
+        curr_time=datetime.datetime.now().strftime("%d_%m-%Hh%M")
+
+        plt.savefig("plots/log_returns_tradeR_{}.png".format(curr_time))
+
+
+    def plot_action_dict(self, action_stats):
+
+        sides=d = pd.DataFrame(action_stats["side"])
+        amounts=pd.DataFrame(action_stats["amount_buy_sell"])
+        fig, ax = plt.subplots(1, 2)
+        sides.hist(bins=3, ax=ax[0])
+        amounts.hist(bins=100, ax=ax[1])
+
+
+        curr_time=datetime.datetime.now().strftime("%d_%m-%Hh%M")
+        plt.savefig("plots/action_stats_tradeR_{}.png".format(curr_time)) 

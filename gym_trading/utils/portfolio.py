@@ -3,8 +3,8 @@ import pandas as pd
 import numpy as np
 
 class Portfolio:
-    def __init__(self, asset):
-        self.initial_account_balance = 10000
+    def __init__(self, asset, initial_balance):
+        self.initial_account_balance = initial_balance
         self.asset = asset
         self.orders = []
         self.balance = self.initial_account_balance

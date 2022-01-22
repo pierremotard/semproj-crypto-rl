@@ -189,29 +189,10 @@ class Agent:
 
             # Finding Surrogate Loss
             advantages = rewards - state_values
-            # print("advantages : {}".format(advantages))
-            # # Should be shape torch.Size([scalar])
-            # print("advantages shape : {}".format(advantages.shape))
 
-            # print("rewards : {}".format(rewards))
-            # # Should be shape torch.Size([scalar])
-            # print("rewards shape : {}".format(rewards.shape))
-
-            # print("state_values : {}".format(state_values))
-            # # Should be shape torch.Size([scalar])
-            # print("state_values shape : {}".format(state_values.shape))
-
-            # print("loss : {}".format(self.MseLoss(state_values, rewards)))
-            # # Should be shape torch.Size([])  i.e. just a scalar
-            # print("loss shape : {}".format(self.MseLoss(state_values, rewards).shape))
-
-            # print("dist entropy : {}".format(dist_entropy))
-            # # Should be shape torch.Size([scalar])
-            # print("dist entropy shape : {}".format(dist_entropy.shape))
-
-            surr1 = ratios * advantages
-            surr2 = torch.clamp(ratios, 1-self.eps_clip,
-                                1+self.eps_clip) * advantages
+            surr1 = torch.mul(ratios, advantages)
+            surr2 = torch.mul(torch.clamp(ratios, 1-self.eps_clip,
+                                          1+self.eps_clip), advantages)
 
             # final loss of clipped objective PPO
             # Should be shape torch.Size([scalar])

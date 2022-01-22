@@ -37,7 +37,8 @@ class BaseEnvironment(Env, ABC):
                  format_3d: bool = False,
                  reward_type: str = 'default',
                  transaction_fee: bool = True,
-                 ema_alpha: list or float or None = EMA_ALPHA):
+                 ema_alpha: list or float or None = EMA_ALPHA,
+                 initial_balance=10000):
         """
         Base class for creating environments extending OpenAI's GYM framework.
 
@@ -77,7 +78,7 @@ class BaseEnvironment(Env, ABC):
         # get Broker class to keep track of PnL and orders
         self.broker = Broker(max_position=max_position, transaction_fee=transaction_fee)
 
-        self.portfolio = Portfolio("XBT")
+        self.portfolio = Portfolio("XBT", initial_balance)
 
         # properties required for instantiation
         self.symbol = symbol
