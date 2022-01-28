@@ -147,7 +147,7 @@ def compute_td_loss(batch_size, replay_buffer, device, policy_net_act, policy_ne
     state, state_order, act, dec, reward, next_state, done = replay_buffer.sample(batch_size)
 
     action_act = torch.LongTensor(act).to(device)
-    state = torch.FloatTensor(np.float32(state)).to(device)
+    state = torch.FloatTensor(np.float32(state))#.to(device)
     state_order = torch.FloatTensor(state_order).to(device)
     next_state = torch.FloatTensor(np.float32(next_state)).to(device)
     reward = torch.FloatTensor(np.array(reward)).to(device)
@@ -155,12 +155,15 @@ def compute_td_loss(batch_size, replay_buffer, device, policy_net_act, policy_ne
 
     criterion = nn.SmoothL1Loss(reduction='none')
 
+    next_state = torch.Tensor(state).view(batch_size, -1, state.shape[-1]).to(device)
+    
+    state = state.to(device)
     # Manager(Actor) Network
     q_values_act, _ = policy_net_act(state)
     # print(q_values_act.shape)
     # print(action_act.shape)
 
-    next_state = torch.Tensor(state).view(batch_size, -1, state.shape[-1]).to(device)
+    
 
     next_q_values_act, _ = policy_net_act(next_state)
 
