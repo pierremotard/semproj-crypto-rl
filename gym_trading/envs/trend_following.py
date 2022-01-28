@@ -49,6 +49,9 @@ class TrendFollowing(BaseEnvironment):
         """
         action_penalty_reward = pnl = 0.0
 
+        amount = action[0].item()
+        action = action[1].item()
+
         if action == 0:  # do nothing
             action_penalty_reward += ENCOURAGEMENT
 
@@ -56,6 +59,13 @@ class TrendFollowing(BaseEnvironment):
             # Deduct transaction costs
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE
+
+            if self.portfolio.get_balance() < self.best_ask:
+                action_penalty_reward -= ENCOURAGEMENT
+                return action_penalty_reward, pnl
+            
+            # self.portfolio.order_one('buy', self.best_ask, MARKET_ORDER_FEE)
+            self.portfolio.execute_order('buy', amount, self.best_ask, MARKET_ORDER_FEE)
 
             if self.broker.short_inventory_count > 0:
                 # Net out existing position
@@ -77,7 +87,13 @@ class TrendFollowing(BaseEnvironment):
             # Deduct transaction costs
             if self.broker.transaction_fee:
                 pnl -= MARKET_ORDER_FEE
+            
+            if self.portfolio.get_shares_held() <= 0:
+                action_penalty_reward -= ENCOURAGEMENT
+                return action_penalty_reward, pnl
 
+            # self.portfolio.order_one('sell', self.best_bid, MARKET_ORDER_FEE)
+            self.portfolio.execute_order('sell', amount, self.best_bid, MARKET_ORDER_FEE)
             if self.broker.long_inventory_count > 0:
                 # Net out existing position
                 order = MarketOrder(ccy=self.symbol, side='long', price=self.best_bid,

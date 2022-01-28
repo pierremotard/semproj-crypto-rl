@@ -1,19 +1,24 @@
-from keras.models import Sequential
-from keras.layers import Dense, Flatten, Conv2D
-from keras.optimizers import Adam
-from rl.agents.dqn import DQNAgent
-from rl.memory import SequentialMemory
-from rl.callbacks import FileLogger, ModelIntervalCheckpoint
+# from keras.models import Sequential
+# from keras.layers import Dense, Flatten, Conv2D
+# from keras.optimizers import Adam
+# from rl.agents.dqn import DQNAgent
+# from rl.memory import SequentialMemory
+# from rl.callbacks import FileLogger, ModelIntervalCheckpoint
+from agent.Hierarchical_RL_Attention import ActorNetwork, OrderNetwork, ReplayBuffer, compute_td_loss
+from stable_baselines3 import PPO, DQN, DDPG, A2C, TD3, SAC
 from configurations import LOGGER
 import os
 import gym
 import gym_trading
-
+import torch
+import torch.optim as optim
+import numpy as np
+import math
 
 class Agent(object):
     name = 'DQN'
 
-    def __init__(self, number_of_training_steps=1e5, gamma=0.999, load_weights=False,
+    def __init__(self, number_of_training_steps=1e5, training=True, gamma=0.999, load_weights=False,
                  visualize=False, dueling_network=True, double_dqn=True, nn_type='mlp',
                  **kwargs):
         """
@@ -49,25 +54,36 @@ class Agent(object):
         # Create agent
         # NOTE: 'Keras-RL' uses its own frame-stacker
         self.memory_frame_stack = 1  # Number of frames to stack e.g., 1.
-        self.model = self.create_model(name=self.neural_network_type)
-        self.memory = SequentialMemory(limit=10000,
-                                       window_length=self.memory_frame_stack)
-        self.train = self.env.env.training
+        # self.model = self.create_model(name=self.neural_network_type)
+        # self.memory = SequentialMemory(limit=10000,
+        #                               window_length=self.memory_frame_stack)
+        self.train = True #kwargs["training"] #self.env.env.training
         self.cwd = os.path.dirname(os.path.realpath(__file__))
 
         # create the agent
-        self.agent = DQNAgent(model=self.model,
-                              nb_actions=self.env.action_space.n,
-                              memory=self.memory,
-                              processor=None,
-                              nb_steps_warmup=500,
-                              enable_dueling_network=dueling_network,
-                              dueling_type='avg',
-                              enable_double_dqn=double_dqn,
-                              gamma=gamma,
-                              target_model_update=1000,
-                              delta_clip=1.0)
-        self.agent.compile(Adam(lr=float("3e-4")), metrics=['mae'])
+        # self.agent = A2C('MlpPolicy', self.env, verbose=1, tensorboard_log="./a2c/")
+        # self.agent = A2C('CnnPolicy', self.env, verbose=1, tensorboard_log="./a2c/")
+        # self.agent = PPO('MlpPolicy', self.env, verbose=1, tensorboard_log="./ppo/")
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        self.replay_initial = 100
+        self.replay_buffer = ReplayBuffer(1000)
+
+        self.state_dim_act = self.env.observation_space.shape[1]
+        self.state_dim_order = self.env.observation_space.shape[1]
+
+        # self.action_dim = 2
+        self.action_dim = 3
+        self.batch_size = 8
+        self.hidden_dim = 64
+
+        self.policy_lr = 1e-3
+        self.policy_net_act = ActorNetwork(self.state_dim_act,self.hidden_dim)
+        self.optimizer_act = optim.Adam(self.policy_net_act.parameters(),lr=self.policy_lr)
+
+        self.policy_net_order = OrderNetwork(self.state_dim_order,self.action_dim,self.hidden_dim)
+        self.optimizer_order = optim.Adam(self.policy_net_order.parameters(),lr=self.policy_lr)
+
 
     def __str__(self):
         # msg = '\n'
@@ -75,56 +91,7 @@ class Agent(object):
         return 'Agent = {} | env = {} | number_of_training_steps = {}'.format(
             Agent.name, self.env_name, self.number_of_training_steps)
 
-    def create_model(self, name: str = 'cnn') -> Sequential:
-        """
-        Helper function get create and get the default MLP or CNN model.
-
-        :param name: Neural network type ['mlp' or 'cnn']
-        :return: neural network
-        """
-        LOGGER.info("creating model for {}".format(name))
-        if name == 'cnn':
-            return self._create_cnn_model()
-        elif name == 'mlp':
-            return self._create_mlp_model()
-
-    def _create_cnn_model(self) -> Sequential:
-        """
-        Create a Convolutional neural network with dense layer at the end.
-
-        :return: keras model
-        """
-        features_shape = (self.memory_frame_stack, *self.env.observation_space.shape)
-        model = Sequential()
-        conv = Conv2D
-        model.add(conv(input_shape=features_shape,
-                       filters=5, kernel_size=[10, 1], padding='same', activation='relu',
-                       strides=[5, 1], data_format='channels_first'))
-        model.add(conv(filters=5, kernel_size=[5, 1], padding='same', activation='relu',
-                       strides=[2, 1], data_format='channels_first'))
-        model.add(conv(filters=5, kernel_size=[4, 1], padding='same', activation='relu',
-                       strides=[2, 1], data_format='channels_first'))
-        model.add(Flatten())
-        model.add(Dense(256, activation='relu'))
-        model.add(Dense(self.env.action_space.n, activation='softmax'))
-        LOGGER.info(model.summary())
-        return model
-
-    def _create_mlp_model(self) -> Sequential:
-        """
-        Create a DENSE neural network with dense layer at the end
-
-        :return: keras model
-        """
-        features_shape = (self.memory_frame_stack, *self.env.observation_space.shape)
-        model = Sequential()
-        model.add(Dense(units=256, input_shape=features_shape, activation='relu'))
-        model.add(Dense(units=256, activation='relu'))
-        model.add(Flatten())
-        model.add(Dense(self.env.action_space.n, activation='softmax'))
-        LOGGER.info(model.summary())
-        return model
-
+   
     def start(self) -> None:
         """
         Entry point for agent training and testing
@@ -141,11 +108,15 @@ class Agent(object):
         weights_filename = os.path.join(output_directory, weight_name)
         LOGGER.info("weights_filename: {}".format(weights_filename))
 
-        if self.load_weights:
+        if self.load_weights==True:
             LOGGER.info('...loading weights for {} from\n{}'.format(
                 self.env_name, weights_filename))
-            self.agent.load_weights(weights_filename)
-
+            print("Loading weights.")
+            # self.agent.load_weights(weights_filename)
+            self.policy_net_act.load_state_dict(torch.load("policy_net_act_weights.pth"))
+            self.optimizer_act.load_state_dict(torch.load("optimizer_act_weights.pth"))
+            self.policy_net_order.load_state_dict(torch.load("policy_net_order_weights.pth"))
+            self.optimizer_order.load_state_dict(torch.load("optimizer_order_weights.pth"))
         if self.train:
             step_chkpt = '{step}.h5f'
             step_chkpt = 'dqn_{}_weights_{}'.format(self.env_name, step_chkpt)
@@ -158,21 +129,152 @@ class Agent(object):
                                         'dqn_{}_log.json'.format(self.env_name))
             LOGGER.info('log_filename: {}'.format(log_filename))
 
-            callbacks = [ModelIntervalCheckpoint(checkpoint_weights_filename,
-                                                 interval=250000)]
-            callbacks += [FileLogger(log_filename, interval=100)]
+            # callbacks = [ModelIntervalCheckpoint(checkpoint_weights_filename,
+            #                                     interval=250000)]
+            # callbacks += [FileLogger(log_filename, interval=100)]
+
+            num_frames = 10000  # Steps
+            weights_act = []
+            weights_ord = []
+            rewards = []
+            loss_order = []
+            loss_actor = []
+            loss = []
+            profit = []
+            forecast = []
+            action_list = []
+            gamma = 0.99
+
+            epsilon_start = 0.90
+            epsilon_final = 0.01
+            epsilon_decay = 10000
+            epsilon_by_frame = lambda frame_idx: epsilon_final + (epsilon_start - epsilon_final) * math.exp(
+                -1. * frame_idx / epsilon_decay)        
 
             LOGGER.info('Starting training...')
-            self.agent.fit(self.env,
-                           callbacks=callbacks,
-                           nb_steps=self.number_of_training_steps,
-                           log_interval=10000,
-                           verbose=0,
-                           visualize=self.visualize)
+            #self.agent.learn(total_timesteps=self.number_of_training_steps)
+
+            state = self.env.reset()
+
+            for step in range(self.number_of_training_steps):
+                state = torch.FloatTensor(state)
+                epsilon = epsilon_by_frame(step)
+                state = torch.Tensor(state).unsqueeze(dim=0)
+                act, w_act = self.policy_net_act.act(state, epsilon)
+                forecast.append(act)
+
+                # state_order = torch.cat([state, torch.unsqueeze(act.transpose(-2, -1), 0)], 1)
+                state_order = torch.cat([state, act.unsqueeze(0)], 1)
+
+                amount, side, w_ord = self.policy_net_order.act(state_order, epsilon)  # for amount and action prediction
+                action_list.append(side)
+                if torch.is_tensor(side):
+                    side = int(side.cpu().detach().numpy()[0])
+                if torch.is_tensor(amount):
+                    amount = float(amount.cpu().detach().numpy())
+                # print(type(dec), type(order))
+                # print(type([dec, order]))
+                action = torch.tensor([amount, side])
+                # action = np.expand_dims(action, axis=1)
+                # action = action.T
+
+                # print(action)
+                # next_state, reward, done, _ = self.env.step(action)
+
+                next_state, reward, done, _ = self.env.step(action)
+
+                # print("This is reward outside: ", type(reward), reward)
+                # bal, net, shares_held, prof = self.env.render()
+
+                self.replay_buffer.push(state, state_order, act, side, reward, next_state, done)
+
+                step += 1
+                state = next_state
+                # print(rewards)
+                if len(self.replay_buffer) > self.replay_initial:
+                    # print(len(replay_buffer), "skr skr")
+                    ord_l, act_l, TD_Loss = compute_td_loss(
+                        self.batch_size, self.replay_buffer, self.device, self.policy_net_act, self.policy_net_order,
+                        self.optimizer_order, gamma, rewards, self.optimizer_act)
+                    
+                    loss_actor.append(act_l), loss_order.append(ord_l), loss.append(TD_Loss)
+
+                if (step % 1000) == 0:
+                    print("Step : {}".format(step))
+                #     weights_act.append(w_act)
+                #     weights_ord.append(w_ord)
+                #     print('Step-', str(step), '/', str(num_frames), '| Profit-', net, '| Model Loss-', ord_l)
+                #     torch.save(
+                #         {'model_state_dict': self.policy_net_act.state_dict(),
+                #         'optimizer_state_dict_act': self.optimizer_act.state_dict(),
+                #         'loss': TD_Loss}, checkpoint_name + '/policy_net_act.pth.tar')  # save PolicyNet
+                #     torch.save(
+                #         {'model_state_dict': self.policy_net_order.state_dict(),
+                #         'optimizer_state_dict_order': self.optimizer_order.state_dict(),
+                #         'loss': TD_Loss}, checkpoint_name + '/policy_net_order.pth.tar')  # save PolicyNet
+
+                rewards.append(reward), 
+                # loss_actor.append(act_l), loss_order.append(ord_l), loss.append(TD_Loss)
+
+                if done:
+                    state = self.env.reset()
+
+
+
             LOGGER.info("training over.")
             LOGGER.info('Saving AGENT weights...')
-            self.agent.save_weights(weights_filename, overwrite=True)
+            torch.save(self.policy_net_act.state_dict(), "policy_net_act_weights.pth")
+            torch.save(self.optimizer_act.state_dict(), "optimizer_act_weights.pth")
+            torch.save(self.policy_net_order.state_dict(), "policy_net_order_weights.pth")
+            torch.save(self.optimizer_order.state_dict(), "optimizer_order_weights.pth")
+
+
             LOGGER.info("AGENT weights saved.")
         else:
             LOGGER.info('Starting TEST...')
-            self.agent.test(self.env, nb_episodes=2, visualize=self.visualize)
+
+            self.policy_net_act.load_state_dict(torch.load("policy_net_act_weights.pth"))
+            self.optimizer_act.load_state_dict(torch.load("optimizer_act_weights.pth"))
+
+            self.policy_net_order.load_state_dict(torch.load("policy_net_order_weights.pth"))
+            self.optimizer_order.load_state_dict(torch.load("optimizer_order_weights.pth"))
+
+
+            state = self.env.reset()
+            rewards = []
+            for step in range(15000):
+                state = torch.FloatTensor(state)
+                state = torch.Tensor(state).unsqueeze(dim=0)
+                act, w_act = self.policy_net_act.act(state, 0)
+                # state_order = torch.cat([state, torch.unsqueeze(act.transpose(-2, -1), 0)], 1)
+                state_order = torch.cat([state, act.unsqueeze(0)], 1)
+
+                amount, side, w_ord = self.policy_net_order.act(state_order, 0)
+                if torch.is_tensor(side):
+                    side = int(side.cpu().detach().numpy()[0])
+                if torch.is_tensor(amount):
+                    amount = float(amount.cpu().detach().numpy())
+
+                # action = np.array([side, amount])
+                # action = np.expand_dims(action, axis=1)
+                # action = action.T
+                action = torch.tensor([amount, side])
+                # print(action)
+                next_state, reward, done, info = self.env.step(action)
+                # print("This is reward outside: ", type(reward), reward)
+
+                rewards.append(reward)
+
+                if done:
+                    print("Breaks episode.")
+                    break
+
+                state = next_state
+
+                if step % 500 == 0:
+                    print(f"Step: {step}")
+            
+
+            self.env.plot_observation_history("plot_ep_history_ahrl")
+            self.env.plot_trade_history("plot_trades_history_ahrl")
+            self.env.portfolio.get_portfolio()

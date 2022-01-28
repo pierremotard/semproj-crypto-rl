@@ -5,6 +5,7 @@ from typing import Union
 import numpy as np
 import pandas as pd
 from gym import Env
+import torch
 
 import gym_trading.utils.reward as reward_types
 from configurations import (
@@ -16,6 +17,7 @@ from gym_trading.utils.plot_history import Visualize
 from gym_trading.utils.render_env import TradingGraph
 from gym_trading.utils.statistic import ExperimentStatistics
 from indicators import IndicatorManager, RSI, TnS
+from portfolio import Portfolio
 
 VALID_REWARD_TYPES = [f for f in dir(reward_types) if '__' not in f]
 
@@ -127,6 +129,7 @@ class BaseEnvironment(Env, ABC):
         self._best_asks = self._raw_data['midpoint'] + (self._raw_data['spread'] / 2)
 
         self.max_steps = self._raw_data.shape[0] - self.action_repeats - 1
+        print("max steps : {}".format(self.max_steps))
 
         # load indicators into the indicator manager
         self.tns = IndicatorManager()
@@ -164,6 +167,9 @@ class BaseEnvironment(Env, ABC):
         # graph midpoint prices
         self._render.reset_render_data(
             y_vec=self._midpoint_prices[:np.shape(self._render.x_vec)[0]])
+        
+        # Portfolio
+        self.portfolio = Portfolio("BTC-PERP", 100000)
 
     @abstractmethod
     def map_action_to_broker(self, action: int) -> (float, float):
@@ -268,14 +274,21 @@ class BaseEnvironment(Env, ABC):
 
             if self.done:
                 self.reset()
-                return self.observation, self.reward, self.done
+                return self.observation, self.reward, self.done, {}
 
             # reset the reward if there ARE action repeats
             if current_step == 0:
                 self.reward = 0.
-                step_action = action
+                # step_action = action
+                step_amount = action[0].item()
+                step_action = int(action[1].item())
+                # print("Step amount {}".format(step_amount))
+                # print("Step action {}".format(step_action))
+
             else:
+                step_amount = 0
                 step_action = 0
+            
 
             # Get current step's midpoint and change in midpoint price percentage
             self.midpoint = self._midpoint_prices[self.local_step_number]
@@ -309,9 +322,13 @@ class BaseEnvironment(Env, ABC):
                 step=self.local_step_number
             )
 
+            long_filled = 1 if step_action == 1 and self.portfolio.get_balance() > self.best_ask else 0
+            short_filled = 1 if step_action == 2 and self.portfolio.get_shares_held() > 0 else 0
+
             # Get PnL from any filled MARKET orders AND action penalties for invalid
             # actions made by the agent for future discouragement
-            action_penalty_reward, market_pnl = self.map_action_to_broker(action=step_action)
+            action = torch.tensor([step_amount, step_action])
+            action_penalty_reward, market_pnl = self.map_action_to_broker(action=action)
             step_pnl = limit_pnl + market_pnl
             self.step_reward = self._get_step_reward(step_pnl=step_pnl,
                                                      step_penalty=action_penalty_reward,
@@ -321,6 +338,8 @@ class BaseEnvironment(Env, ABC):
             # Add current step's observation to the data buffer
             step_observation = self._get_step_observation(step_action=step_action)
             self.data_buffer.append(step_observation)
+
+            
 
             # Store for visualization AFTER the episode
             self.viz.add_observation(obs=step_observation)
@@ -337,6 +356,7 @@ class BaseEnvironment(Env, ABC):
         self.observation = self._get_observation()
 
         if self.local_step_number > self.max_steps:
+            print("Reached max steps")
             self.done = True
 
             had_long_positions = 1 if self.broker.long_inventory_count > 0 else 0
