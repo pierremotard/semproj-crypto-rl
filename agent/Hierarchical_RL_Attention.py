@@ -160,7 +160,7 @@ def compute_td_loss(batch_size, replay_buffer, device, policy_net_act, policy_ne
     # print(q_values_act.shape)
     # print(action_act.shape)
 
-    next_state = torch.Tensor(state).view(batch_size, -1, state.shape[-1])
+    next_state = torch.Tensor(state).view(batch_size, -1, state.shape[-1]).to(device)
 
     next_q_values_act, _ = policy_net_act(next_state)
 
