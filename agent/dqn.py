@@ -15,6 +15,9 @@ import torch.optim as optim
 import numpy as np
 import math
 
+use_cuda = torch.cuda.is_available()
+device = torch.device('cuda' if use_cuda else 'cpu')
+
 class Agent(object):
     name = 'DQN'
 
@@ -78,10 +81,10 @@ class Agent(object):
         self.hidden_dim = 64
 
         self.policy_lr = 1e-3
-        self.policy_net_act = ActorNetwork(self.state_dim_act,self.hidden_dim)
+        self.policy_net_act = ActorNetwork(self.state_dim_act,self.hidden_dim).to(device)
         self.optimizer_act = optim.Adam(self.policy_net_act.parameters(),lr=self.policy_lr)
 
-        self.policy_net_order = OrderNetwork(self.state_dim_order,self.action_dim,self.hidden_dim)
+        self.policy_net_order = OrderNetwork(self.state_dim_order,self.action_dim,self.hidden_dim).to(device)
         self.optimizer_order = optim.Adam(self.policy_net_order.parameters(),lr=self.policy_lr)
 
 
@@ -157,14 +160,14 @@ class Agent(object):
             state = self.env.reset()
 
             for step in range(self.number_of_training_steps):
-                state = torch.FloatTensor(state)
+                # state = torch.FloatTensor(state).to(device)
                 epsilon = epsilon_by_frame(step)
-                state = torch.Tensor(state).unsqueeze(dim=0)
+                state = torch.Tensor(state).unsqueeze(dim=0).to(device)
                 act, w_act = self.policy_net_act.act(state, epsilon)
                 forecast.append(act)
 
                 # state_order = torch.cat([state, torch.unsqueeze(act.transpose(-2, -1), 0)], 1)
-                state_order = torch.cat([state, act.unsqueeze(0)], 1)
+                state_order = torch.cat([state, act.unsqueeze(0)], 1).to(device)
 
                 amount, side, w_ord = self.policy_net_order.act(state_order, epsilon)  # for amount and action prediction
                 action_list.append(side)
