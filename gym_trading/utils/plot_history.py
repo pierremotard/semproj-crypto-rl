@@ -108,6 +108,8 @@ class Visualize(object):
             data = history
         else:
             data = self.to_df()
+        
+        print("data {}".format(data[:30]))
 
         midpoints = data['midpoint'].values
         long_fills = data.loc[data['buys'] > 0., 'buys'].index.values
@@ -123,13 +125,14 @@ class Visualize(object):
                                 figsize=(widths[0], int(sum(heights))),
                                 gridspec_kw=gs_kw)
 
-        axs[0].plot(midpoints, label='midpoints', color='blue', alpha=0.6)
+
+        axs[0].plot(range(len(midpoints)), midpoints, label='midpoints', color='blue', alpha=0.6)
         axs[0].set_ylabel('Midpoint Price (USD)', color='black')
 
-        # Redundant labeling for all computer compatibility
+        # # Redundant labeling for all computer compatibility
         axs[0].set_facecolor("w")
-        axs[0].tick_params(axis='x', colors='black')
-        axs[0].tick_params(axis='y', colors='black')
+        # axs[0].tick_params(axis='x', colors='black')
+        # axs[0].tick_params(axis='y', colors='black')
         axs[0].spines['top'].set_visible(True)
         axs[0].spines['right'].set_visible(True)
         axs[0].spines['bottom'].set_visible(True)
@@ -150,8 +153,8 @@ class Visualize(object):
         axs[1].axhline(0., color='grey')
         axs[1].set_ylabel('Inventory Count', color='black')
         axs[1].set_facecolor("w")
-        axs[1].tick_params(axis='x', colors='black')
-        axs[1].tick_params(axis='y', colors='black')
+        # axs[1].tick_params(axis='x', colors='black')
+        # axs[1].tick_params(axis='y', colors='black')
         axs[1].spines['top'].set_visible(True)
         axs[1].spines['right'].set_visible(True)
         axs[1].spines['bottom'].set_visible(True)
@@ -168,8 +171,8 @@ class Visualize(object):
         axs[2].set_xlabel('Number of steps (1 second each step)', color='black')
         # Redundant labeling for all computer compatibility
         axs[2].set_facecolor("w")
-        axs[2].tick_params(axis='x', colors='black')
-        axs[2].tick_params(axis='y', colors='black')
+        # axs[2].tick_params(axis='x', colors='black')
+        # axs[2].tick_params(axis='y', colors='black')
         axs[2].spines['top'].set_visible(True)
         axs[2].spines['right'].set_visible(True)
         axs[2].spines['bottom'].set_visible(True)
@@ -180,7 +183,7 @@ class Visualize(object):
         axs[2].spines['left'].set_color("black")
         axs[2].grid(color='grey', linestyle='-', linewidth=0.25, alpha=0.5)
         plt.tight_layout()
-
+        
         if save_filename is None:
             plt.show()
         else:

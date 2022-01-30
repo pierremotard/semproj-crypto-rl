@@ -1,6 +1,7 @@
 import argparse
-
-from agent.dqn import Agent
+from comet_ml import Experiment
+#from agent.dqn import Agent
+from agent.run import Run
 from configurations import LOGGER
 
 parser = argparse.ArgumentParser()
@@ -86,10 +87,10 @@ parser.add_argument('--reward_type',
                     6) 'trade_completion' --> reward is generated per trade's round trip
                     """,
                     type=str)
-parser.add_argument('--nn_type',
-                    default='cnn',
-                    help="Type of neural network to use: 'cnn' or 'mlp' ",
-                    type=str)
+# parser.add_argument('--nn_type',
+#                     default='cnn',
+#                     help="Type of neural network to use: 'cnn' or 'mlp' ",
+#                     type=str)
 parser.add_argument('--dueling_network',
                     default=True,
                     help="If TRUE, use Dueling architecture in DQN",
@@ -98,12 +99,35 @@ parser.add_argument('--double_dqn',
                     default=True,
                     help="If TRUE, use double DQN for Q-value estimation",
                     type=bool)
+parser.add_argument('--logger',
+                    default='comet',
+                    help="If TRUE, uses CometML to track the experiment",
+                    type=str)
+parser.add_argument('--mode',
+                    default='train',
+                    help="Training or testing mode. " +
+                         "If train, then agent starts learning, " +
+                         "If test, then agent is tested",
+                    type=str)
+parser.add_argument('--nb_training_days',
+                    default=3,
+                    help="Number of days to train for",
+                    type=int)
+parser.add_argument('--nb_testing_days',
+                    default=2,
+                    help="Number of days to test for",
+                    type=int)
+parser.add_argument('--initial_balance',
+                    default=10000,
+                    help="Initial balance of the agent",
+                    type=int)
 args = vars(parser.parse_args())
 
 
 def main(kwargs):
     LOGGER.info(f'Experiment creating agent with kwargs: {kwargs}')
-    agent = Agent(**kwargs)
+    # agent = Agent(**kwargs)
+    agent = Run(**kwargs)
     LOGGER.info(f'Agent created. {agent}')
     agent.start()
 

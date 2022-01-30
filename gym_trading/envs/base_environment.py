@@ -379,7 +379,7 @@ class BaseEnvironment(Env, ABC):
         # save rewards to derive cumulative reward
         self.episode_stats.reward += self.reward
 
-        return self.observation, self.reward, self.done, {}
+        return self.observation, self.reward, self.done, self.local_step_number
 
     def reset(self) -> np.ndarray:
         """
