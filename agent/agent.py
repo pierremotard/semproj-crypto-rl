@@ -7,6 +7,7 @@ Code expanded and adapted from code examples provided by Udacity DRL Team, 2018.
 """
 
 # Import Required Packages
+from cmath import exp
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -15,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import random
 
-from agent.hierarchical_ppo import ActorCritic
+from agent.hierarchical_ppo import ActorCritic, SurpriseNetwork
 
 from agent.rollout_buffer import RolloutBuffer
 
@@ -39,7 +40,7 @@ class Agent:
     """
 
     def __init__(self, state_size, action_size, lr_order=0.001, lr_bid=0.001, lr_critic=0.005,
-                 gamma=0.99, K_epochs=10, eps_clip=0.2, action_std=0.6, window_size=100, max_grad_norm=0.5):
+                 gamma=0.99, K_epochs=10, eps_clip=0.2, action_std=0.6, window_size=100, max_grad_norm=0.5, experiment=None):
         """
         Agent Parameters
         ======
@@ -60,6 +61,7 @@ class Agent:
         self.eps_clip = eps_clip
         self.window_size = window_size
         self.max_grad_norm = max_grad_norm
+        self.temperature = 1 # 0.1
         
 
         '''
@@ -69,6 +71,8 @@ class Agent:
         '''
         self.policy = ActorCritic(
             self.state_size, self.action_size, action_std, self.window_size).to(device)
+
+        self.surp = SurpriseNetwork(self.state_size * self.window_size)
 
         # Optimize over parameters of both policies, on order and and bid networks of the actor and on the critic network
         self.optimizer = optim.Adam([
@@ -88,6 +92,10 @@ class Agent:
         self.policy_old = ActorCritic(
             self.state_size, self.action_size, action_std, self.window_size).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
+
+        if experiment is not None:
+            self.experiment = experiment
+            self.idx = 0
 
         # Initialize time step (for updating every UPDATE_EVERY steps)
         self.t_step = 0
@@ -129,6 +137,7 @@ class Agent:
         self.memory.amounts.append(amount)
         self.memory.logprobs.append(action_logprob)
 
+
         return amount, action_type
 
     def optimize_model(self, epoch):
@@ -155,8 +164,14 @@ class Agent:
         old_logprobs = torch.squeeze(torch.stack(
             self.memory.logprobs, dim=0)).detach().to(device)
 
-        for _ in range(self.K_epochs):
+        std_devs = torch.std(old_states, dim=0)        
+        v_surp = self.surp(std_devs)
+        surprise_term = self.temperature * torch.logsumexp(v_surp, dim=0) 
+        # print("surprise_term {}".format(surprise_term))
 
+
+        for _ in range(self.K_epochs):
+            self.idx += 1
             logprobs, state_values, dist_entropy = self.policy.evaluate(
                 old_states, old_actions)
 
@@ -170,11 +185,26 @@ class Agent:
             # print("ratios shape : {}".format(ratios.shape))
 
             # Finding Surrogate Loss
-            advantages = rewards - state_values.detach()
+            advantages = rewards + surprise_term - state_values.detach()
 
             surr1 = torch.mul(ratios, advantages)
             surr2 = torch.mul(torch.clamp(ratios, 1-self.eps_clip,
                                           1+self.eps_clip), advantages)
+
+
+            self.experiment.log_metric(
+                    "min_loss", -torch.min(surr1, surr2).mean().item(), step=self.idx)
+
+            self.experiment.log_metric(
+                    "mse_loss", self.MseLoss(state_values, rewards), step=self.idx)
+
+            self.experiment.log_metric(
+                    "entropy_loss", int(dist_entropy.mean().item()), step=self.idx)
+            
+            print("Surprise term {}".format(surprise_term))
+            self.experiment.log_metric(
+                    "surprise_term", surprise_term, step=self.idx)
+
 
             # final loss of clipped objective PPO
             # Should be shape torch.Size([scalar])
@@ -186,13 +216,13 @@ class Agent:
 
             # take gradient step
             self.optimizer.zero_grad()
-            loss.mean().backward()
-            nn.utils.clip_grad.clip_grad_norm_(
-                self.policy.actor.order_net.parameters(), self.max_grad_norm)
-            nn.utils.clip_grad.clip_grad_norm_(
-                self.policy.actor.bid_net.parameters(), self.max_grad_norm)
-            nn.utils.clip_grad.clip_grad_norm_(
-                self.policy.critic.parameters(), self.max_grad_norm)
+            loss.mean() # .backward()
+            # nn.utils.clip_grad.clip_grad_norm_(
+            #     self.policy.actor.order_net.parameters(), self.max_grad_norm)
+            # nn.utils.clip_grad.clip_grad_norm_(
+            #     self.policy.actor.bid_net.parameters(), self.max_grad_norm)
+            # nn.utils.clip_grad.clip_grad_norm_(
+            #     self.policy.critic.parameters(), self.max_grad_norm)
             self.optimizer.step()
 
         # Copy new weights into old policy

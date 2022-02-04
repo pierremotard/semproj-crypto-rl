@@ -70,7 +70,7 @@ class ActorNetwork(nn.Module):
         self.lstm = nn.LSTM(input_size=num_inputs, hidden_size=self.hidden_size, num_layers=1, batch_first=True,
                             bidirectional=True)
         self.attn = ScaledDotAttention(2 * self.hidden_size)
-        self.fc = nn.Linear(2 * self.hidden_size, 151)
+        self.fc = nn.Linear(2 * self.hidden_size, 151) # Change to 153 if added networth and balance in position_features
 
     def forward(self, state):
         h0 = torch.zeros(2, state.size(0), self.hidden_size).to(device)

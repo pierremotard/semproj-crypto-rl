@@ -33,13 +33,13 @@ class RolloutBuffer(ABC):
         Reset buffer
         """ 
         self.states = np.zeros((self.buffer_size, self.n_envs) + self.obs_shape, dtype=np.float32)
-        self.actions = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32)
-        self.rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.returns = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.log_probs = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.advantages = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        self.actions = np.zeros((self.buffer_size, self.action_dim), dtype=np.float32)
+        self.rewards = np.zeros(self.buffer_size, dtype=np.float32)
+        self.returns = np.zeros(self.buffer_size, dtype=np.float32)
+        self.values = np.zeros(self.buffer_size, dtype=np.float32)
+        self.log_probs = np.zeros(self.buffer_size, dtype=np.float32)
+        self.advantages = np.zeros(self.buffer_size, dtype=np.float32)
         self.pos = 0
         self.full = False
 
-    
+    def 

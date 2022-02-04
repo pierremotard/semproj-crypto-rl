@@ -107,6 +107,8 @@ class Run(object):
         self.eval_env = gym.make(**kwargs)
         self.env_name = self.env.env.id
 
+        print("Env created.")
+
         self.kwargs = kwargs
 
         # Create agent
@@ -121,9 +123,10 @@ class Run(object):
         print(self.env.observation_space.shape)
         print(self.env.observation_space.shape[1])
         print(self.env.action_space.n)
+
         self.window_size = self.env.window_size
         self.agent = Agent(self.env.observation_space.shape[1], action_size=self.env.action_space.n,
-                           lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std, window_size=self.window_size, max_grad_norm=max_grad_norm)
+                           lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std, window_size=self.window_size, max_grad_norm=max_grad_norm, experiment=self.experiment)
 
         self.train = str(mode) == 'train'
         print("Mode TRAINING") if self.train else print("Mode TESTING")
@@ -131,8 +134,6 @@ class Run(object):
         self.nb_training_days = nb_training_days
         self.nb_testing_days = nb_testing_days
         self.initial_balance = initial_balance
-
-        
 
         self.cwd = os.path.dirname(os.path.realpath(__file__))
 
@@ -202,13 +203,13 @@ class Run(object):
         # self.agent.writer.close()
 
         torch.save(self.agent.policy.actor.order_net.state_dict(),
-                   "saved_models/order_net_checkpoint.pth")
+                   "saved_models/order_net_surp_checkpoint.pth")
         torch.save(self.agent.policy.actor.bid_net.state_dict(),
-                   "saved_models/bid_net_checkpoint.pth")
+                   "saved_models/bid_net_surp_checkpoint.pth")
         torch.save(self.agent.policy.critic.state_dict(),
-                   "saved_models/critic_net_checkpoint.pth")
+                   "saved_models/critic_net_surp_checkpoint.pth")
         torch.save(self.agent.optimizer.state_dict(),
-                   "saved_models/optimizer.pth")
+                   "saved_models/optimizer_surp.pth")
 
     def test_agent(self, day_nb=0):
         print("Start testing ...")
@@ -232,12 +233,15 @@ class Run(object):
                 buys.append(local_step_number)
                 action_stats["side"].append(1)
                 action_stats["amount_buy_sell"].append(amount.item())
+                # print("Buys amount {}".format(amount))
             elif action_type.item() == 2:
                 sells.append(local_step_number)
                 action_stats["side"].append(2)
                 action_stats["amount_buy_sell"].append(amount.item())
+                # print("Sells amount {}".format(amount))
             else:
                 action_stats["side"].append(0)
+                # print("Holds")
 
             state, reward, done, local_step_number = self.env.step(
                 torch.cat((amount, action_type.unsqueeze(0)), dim=0))
@@ -250,11 +254,11 @@ class Run(object):
             if self.use_logger:
                 self.experiment.log_metric(
                     "reward", reward, step=local_step_number + day_nb*85400)
-                self.experiment.log_metric("net worth", self.env.portfolio.get_net_worth(
+                self.experiment.log_metric("net worth", self.env.get_portfolio_net_worth(
                 ), step=local_step_number + day_nb*85400)
 
             # self.env.render()    not working yet
-            self.step_returns.append(self.env.portfolio.get_net_worth())
+            self.step_returns.append(self.env.get_portfolio_net_worth())
 
             if done:
                 print("Reaches end of data or no more CA$H :(")
@@ -276,7 +280,7 @@ class Run(object):
         if self.use_logger:
             self.experiment.log_metric("sharpe ratio", sharpe_ratio)
 
-        self.daily_returns.append(self.env.portfolio.get_net_worth())
+        self.daily_returns.append(self.env.get_portfolio_net_worth())
 
     def start(self) -> None:
         """
@@ -300,12 +304,13 @@ class Run(object):
             print("Loading weights.")
             # self.agent.load_weights(weights_filename)
             self.agent.policy.actor.order_net.load_state_dict(
-                torch.load("saved_models/order_net_checkpoint.pth"))
+                torch.load("saved_models/order_net_surp_checkpoint.pth"))
             self.agent.policy.actor.bid_net.load_state_dict(
-                torch.load("saved_models/bid_net_checkpoint.pth"))
+                torch.load("saved_models/bid_net_surp_checkpoint.pth"))
             self.agent.policy.critic.load_state_dict(
-                torch.load("saved_models/critic_net_checkpoint.pth"))
-            self.agent.optimizer.load_state_dict(torch.load("saved_models/optimizer.pth"))
+                torch.load("saved_models/critic_net_surp_checkpoint.pth"))
+            self.agent.optimizer.load_state_dict(
+                torch.load("saved_models/optimizer_surp.pth"))
 
         if self.train:
             print("Starts training.")
@@ -336,6 +341,8 @@ class Run(object):
 
         else:
             print("Starts testing.")
+            print("MIDPOINTS.")
+
             self.test_agent()
             # for i in range(self.nb_training_days, self.nb_testing_days+self.nb_training_days):
             #     self.kwargs["fitting_file"] = data_days[i]
@@ -357,10 +364,13 @@ class Run(object):
             # print(self.env.position_stats())
             print(self.daily_returns)
 
-            self.env.plot_observation_history("plot_ep_history_thrl")
-            self.env.plot_trade_history("plot_trades_history_thrl")
+            self.env.plot_observation_history("plot_ep_history_thrl_surp")
+            figure = self.env.plot_trade_history(
+                "plot_trades_history_thrl_surp")
+            if self.use_logger:
+                self.experiment.log_figure(figure)
 
-        self.env.portfolio.get_portfolio()
+        self.env.display_portfolio()
         self.env.close()
 
     def log_environment_details(self):
@@ -382,7 +392,7 @@ class Run(object):
         log_return.hist(bins=30, ax=ax)
         curr_time = datetime.datetime.now().strftime("%d_%m-%Hh%M")
 
-        plt.savefig("plots/log_returns_tradeR_{}.png".format(curr_time))
+        plt.savefig("plots/log_returns_tradeR_surp_{}.png".format(curr_time))
 
     def plot_action_dict(self, action_stats):
 
@@ -393,4 +403,4 @@ class Run(object):
         amounts.hist(bins=100, ax=ax[1])
 
         curr_time = datetime.datetime.now().strftime("%d_%m-%Hh%M")
-        plt.savefig("plots/action_stats_tradeR_{}.png".format(curr_time))
+        plt.savefig("plots/action_stats_tradeR_surp_{}.png".format(curr_time))

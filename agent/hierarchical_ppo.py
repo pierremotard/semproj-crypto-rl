@@ -45,6 +45,22 @@ class BidNetwork(nn.Module):
         layers = self.layers(x.view(x.size(0), -1))
         return layers
 
+class SurpriseNetwork(nn.Module):
+    def __init__(self, state_size):
+        super(SurpriseNetwork, self).__init__()
+
+        self.layers = nn.Sequential(
+            nn.Linear(state_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, state_size)
+        )
+
+    def forward(self, x):
+        #  shape [batch_size, nb_features], NOT [batch_size, nb_features, 1]
+        layers = self.layers(x)
+        return layers
+
+
 
 class Actor(nn.Module):
     def __init__(self, state_size, action_std_init=0.6):
@@ -62,6 +78,9 @@ class Actor(nn.Module):
         dist = MultivariateNormal(amount_order_net, cov_mat)
         amount = torch.clip(dist.sample(), min=0, max=1)
         # print("Sampled amount shape : {}".format(amount.shape))
+
+        # print("Amount ditrib {}".format(dist))
+        
         amount_logprob = dist.log_prob(amount)  # maybe to use later
 
         # Bid network takes as input [observed state, sampled amount]
@@ -91,7 +110,7 @@ class ActorCritic(nn.Module):
             nn.Linear(128, 128),
             nn.Tanh(),
             nn.Linear(128, 1),
-            nn.Sigmoid() # Try without sigmoid
+            nn.Sigmoid() # TODO: Try without sigmoid
         )
 
     def set_action_std(self, new_action_std):
@@ -115,6 +134,7 @@ class ActorCritic(nn.Module):
             state)
 
         dist = Categorical(action_type_probs)
+        # print("Action type ditrib {}".format(dist.logits))
         action_type = dist.sample()
         action_logprob = dist.log_prob(action_type)
 

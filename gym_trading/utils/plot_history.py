@@ -94,7 +94,7 @@ class Visualize(object):
         self._historical_observations.clear()
 
     def plot_episode_history(self, history: pd.DataFrame or None = None,
-                             save_filename: str or None = None) -> None:
+                             save_filename: str or None = None):
         """
         Plot this entire history of an episode including:
             1) Midpoint prices with trade executions
@@ -189,6 +189,7 @@ class Visualize(object):
         else:
             plt.savefig(f"{save_filename}.png")
             plt.close(fig)
+        return axs
 
     def plot_obs(self, save_filename: str or None = None) -> None:
         """

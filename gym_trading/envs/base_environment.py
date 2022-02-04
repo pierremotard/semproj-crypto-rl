@@ -19,7 +19,7 @@ from gym_trading.utils.statistic import ExperimentStatistics
 from indicators import IndicatorManager, RSI, TnS
 from portfolio import Portfolio
 
-VALID_REWARD_TYPES = [f for f in dir(reward_types) if '__' not in f]
+VALID_REWARD_TYPES = [f for f in dir(reward_types) if '__' not in f] + ['net_worth']
 
 
 class BaseEnvironment(Env, ABC):
@@ -255,6 +255,10 @@ class BaseEnvironment(Env, ABC):
                 profit_ratio=2.
             ) + step_penalty
 
+        elif self.reward_type == 'net_worth':
+            reward += self.portfolio.get_net_worth(self.last_midpoint) - self.portfolio.initial_account_balance + step_penalty
+
+
         else:  # Default implementation
             reward += reward_types.default(
                 inventory_count=self.broker.net_inventory_count,
@@ -392,6 +396,8 @@ class BaseEnvironment(Env, ABC):
                                                                 high=self.max_steps // 5)
         else:
             self.local_step_number = 0
+        print("local step number")
+        print(self.local_step_number)
 
         # print out episode statistics if there was any activity by the agent
         if self.broker.total_trade_count > 0 or self.broker.realized_pnl != 0.:
@@ -573,13 +579,13 @@ class BaseEnvironment(Env, ABC):
         """
         return self.viz.to_df()
 
-    def plot_trade_history(self, save_filename: Union[str, None] = None) -> None:
+    def plot_trade_history(self, save_filename: Union[str, None] = None):
         """
         Plot history from back-test with trade executions, total inventory, and PnL.
 
         :param save_filename: filename for saving the image
         """
-        self.viz.plot_episode_history(save_filename=save_filename)
+        return self.viz.plot_episode_history(save_filename=save_filename)
 
     def plot_observation_history(self, save_filename: Union[str, None] = None) -> None:
         """
@@ -588,3 +594,11 @@ class BaseEnvironment(Env, ABC):
         :param save_filename: filename for saving the image
         """
         return self.viz.plot_obs(save_filename=save_filename)
+
+    def display_portfolio(self):
+        print("Last midpoint is {}".format(self.last_midpoint))
+        return self.portfolio.get_portfolio(self.last_midpoint)
+
+
+    def get_portfolio_net_worth(self):
+        return self.portfolio.get_net_worth(self.last_midpoint)

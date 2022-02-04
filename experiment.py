@@ -70,7 +70,8 @@ parser.add_argument('--reward_type',
                              'realized_pnl',
                              'differential_sharpe_ratio',
                              'asymmetrical',
-                             'trade_completion'],
+                             'trade_completion',
+                              'net_worth'],
                     help="""
                     reward_type: method for calculating the environment's reward:
                     1) 'default' --> inventory count * change in midpoint price returns

@@ -125,5 +125,7 @@ class TrendFollowing(BaseEnvironment):
         return np.array((self.broker.net_inventory_count / self.max_position,
                          self.broker.realized_pnl * self.broker.pct_scale,
                          self.broker.get_unrealized_pnl(self.best_bid, self.best_ask)
-                         * self.broker.pct_scale),
+                         * self.broker.pct_scale,
+                         self.portfolio.get_net_worth(self.last_midpoint),
+                         self.portfolio.get_balance()),
                         dtype=np.float32)
