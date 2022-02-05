@@ -20,7 +20,7 @@ from gym_trading.utils.statistic import ExperimentStatistics
 from gym_trading.utils.utils import plot_transactions
 from indicators import IndicatorManager, RSI, TnS
 
-VALID_REWARD_TYPES = [f for f in dir(reward_types) if '__' not in f]
+VALID_REWARD_TYPES = [f for f in dir(reward_types) if '__' not in f] + ['net_worth']
 
 
 class BaseEnvironment(Env, ABC):
@@ -268,6 +268,9 @@ class BaseEnvironment(Env, ABC):
                 market_order_fee=MARKET_ORDER_FEE,
                 profit_ratio=2.
             ) + step_penalty
+        
+        elif self.reward_type == 'net_worth':
+            reward += self.portfolio.get_net_worth(self.last_midpoint) - self.portfolio.initial_account_balance + step_penalty
 
         else:  # Default implementation
             reward += reward_types.default(
@@ -363,7 +366,7 @@ class BaseEnvironment(Env, ABC):
             else:
                 str_action_type = 'hold'
             # print(str_action_type)
-            self.net_worth_values.append(self.portfolio.get_net_worth())
+            self.net_worth_values.append(self.get_portfolio_net_worth())
 
             # Get PnL from any filled MARKET orders AND action penalties for invalid
             # actions made by the agent for future discouragement
@@ -663,4 +666,12 @@ class BaseEnvironment(Env, ABC):
             "realized pnl": '{:f}'.format(self.broker.realized_pnl),
             "unrealized pnl": '{:f}'.format(self.broker.get_unrealized_pnl(self.best_bid, self.best_ask))
         }
+    
+    def display_portfolio(self):
+        print("Last midpoint is {}".format(self.last_midpoint))
+        return self.portfolio.get_portfolio(self.last_midpoint)
+
+
+    def get_portfolio_net_worth(self):
+        return self.portfolio.get_net_worth(self.last_midpoint)
 

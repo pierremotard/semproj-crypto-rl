@@ -127,7 +127,7 @@ class Run(object):
         # self.agent = Agent(self.env.observation_space.shape[1], action_size=self.env.action_space.n,
         #                    lr_order=lr_order, lr_bid=lr_bid, lr_critic=lr_critic, K_epochs=K_epochs, action_std=action_std, window_size=self.window_size, max_grad_norm=max_grad_norm)
 
-        self.agent = A2C("MlpPolicy", self.env, learning_rate=0.01, verbose=1)
+        self.agent = A2C("MlpPolicy", self.env, learning_rate=0.01, verbose=1, tensorboard_log="./a2c_cartpole_tensorboard/")
 
         self.experiment.log_parameter("agent", "A2C")
 
@@ -254,7 +254,7 @@ class Run(object):
             #             "reward", reward, step=local_step_number)
             # self.env.render()    not working yet
 
-            self.daily_returns=np.append(self.daily_returns, self.env.portfolio.get_net_worth())
+            self.daily_returns=np.append(self.daily_returns, self.env.get_portfolio_net_worth())
 
             # self.experiment.log_histogram_3d(action_stats["amount_buy_sell"], "amounts", i*5)
             # self.experiment.log_histogram_3d(action_stats["side"], "sides", i*5)
@@ -351,7 +351,7 @@ class Run(object):
             print(self.daily_returns)
             self.env.plot_trade_history("plots_viz")
 
-        self.env.portfolio.get_portfolio()
+        self.env.display_portfolio()
         self.env.close()
 
     def log_environment_details(self):

@@ -49,7 +49,8 @@ class Portfolio:
     def update_net_worth(self, current_price):
         self.net_worth = self.balance + self.shares_held * current_price
 
-    def get_net_worth(self):
+    def get_net_worth(self, current_price):
+        self.update_net_worth(current_price)
         return self.net_worth
 
     def get_infos(self):
@@ -88,10 +89,10 @@ class Portfolio:
         self.total_sales_value = 0
         self.orders = []
 
-    def get_portfolio(self):
+    def get_portfolio(self, price):
         print(f'Balance: {self.balance}')
-        print(f'Net worth: {self.net_worth}')
+        print(f'Net worth: {self.get_net_worth(price)}')
         print(f'Change net worth : {(self.net_worth / self.initial_account_balance - 1) * 100}')
         print(f'Shares held: {self.shares_held}')
         print("-------------")
-
+        return self.get_net_worth(price)
